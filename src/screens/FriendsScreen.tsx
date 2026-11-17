@@ -20,7 +20,7 @@ import { A } from '../theme'
 import { SEAT_HEX, type Seat } from '../game/rules'
 import { useIdentity } from '../game/identity'
 import { useOnline } from '../net/online'
-import { SERVER_URL } from '../net/config'
+import { IS_LOCAL_SERVER, SERVER_URL } from '../net/config'
 
 const SEAT_COLOR: Record<Seat, string> = SEAT_HEX
 
@@ -118,6 +118,18 @@ export default function FriendsScreen() {
               </Pressable>
             )}
           </View>
+
+          {/* A build handed to testers must not be pointing at a dev machine:
+              their phones cannot reach localhost or your LAN. */}
+          {IS_LOCAL_SERVER && status === 'error' && (
+            <View style={styles.warnBox}>
+              <Icon name="warning" size={16} color="#4a2a00" />
+              <Text style={styles.warnText}>
+                This build points at a local server ({SERVER_URL}), which a phone cannot reach. Set
+                expo.extra.serverUrl to your deployed URL.
+              </Text>
+            </View>
+          )}
 
           {error && (
             <Pressable style={styles.errorBox} onPress={clearError}>
@@ -376,6 +388,18 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   errorText: { flex: 1, fontFamily: LABEL, fontSize: 12.5, color: '#ffe6e6' },
+  warnBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: A.gold,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: A.goldDeep,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  warnText: { flex: 1, fontFamily: LABEL, fontSize: 12, color: '#4a2a00', lineHeight: 16 },
 
   card: { padding: 14, gap: 10 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },

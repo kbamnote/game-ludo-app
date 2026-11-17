@@ -29,7 +29,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "serverUrl": "http://localhost:8080"
+      "serverUrl": "https://game-ludo-backend-production.up.railway.app"
     }
   }
 }
