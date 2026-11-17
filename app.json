@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Ludo After Dark",
-    "slug": "mobile-ludo",
-    "scheme": "ludoafterdark",
+    "name": "CGP - Cockroach Game Party",
+    "slug": "cgp-cockroach-game-party",
+    "scheme": "cgp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -23,7 +23,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kbamnote.ludoafterdark"
+      "bundleIdentifier": "com.kbamnote.cgp"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,7 +33,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.kbamnote.ludoafterdark",
+      "package": "com.kbamnote.cgp",
       "versionCode": 1
     },
     "web": {

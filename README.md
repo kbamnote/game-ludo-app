@@ -1,4 +1,4 @@
-# Ludo After Dark 3D — Expo app
+# CGP - Cockroach Game Party 3D — Expo app
 
 The React Native build of the game, ported from `../frontend-ludo`. Same Ludo
 engine, same 3D board, dice and rigged characters — rendered through `expo-gl`

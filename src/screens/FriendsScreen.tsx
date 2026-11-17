@@ -58,7 +58,7 @@ export default function FriendsScreen() {
   const onInvite = async () => {
     if (!room) return
     await Share.share({
-      message: `Join my Ludo After Dark room! Room code: ${room.code}`,
+      message: `Join my CGP - Cockroach Game Party room! Room code: ${room.code}`,
     })
   }
 

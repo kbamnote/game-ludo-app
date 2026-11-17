@@ -55,12 +55,12 @@ export default function BrandLockup({
       </View>
 
       <OutlineText size={Math.round(48 * scale)} width={4.2 * scale} color={A.gold} outline={A.textOutline}>
-        LUDO
+        CGP
       </OutlineText>
 
       <View style={{ marginTop: -7 * scale }}>
-        <OutlineText size={Math.round(21 * scale)} width={2.6} color={A.text} outline={A.textOutline}>
-          AFTER DARK
+        <OutlineText size={Math.round(13 * scale)} width={2} color={A.text} outline={A.textOutline}>
+          COCKROACH GAME PARTY
         </OutlineText>
       </View>
 

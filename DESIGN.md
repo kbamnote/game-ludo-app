@@ -1,6 +1,6 @@
 ---
 name: Ludo Midnight Diorama
-source: Stitch project 7276487535578186149 "Ludo After Dark 3D"
+source: Stitch project 7276487535578186149 "CGP - Cockroach Game Party 3D"
 canvas: 390 x 884 logical px (mobile-first)
 ---
 
