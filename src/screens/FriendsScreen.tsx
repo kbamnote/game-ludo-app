@@ -78,7 +78,7 @@ export default function FriendsScreen() {
             <Icon name="arrow-back" size={22} color={A.text} />
           </Pressable>
           <OutlineText size={21} width={2.6} color={A.gold} outline={A.textOutline}>
-            PLAY WITH FRIENDS
+            {room?.publicTable ? 'PUBLIC TABLE' : 'PLAY WITH FRIENDS'}
           </OutlineText>
           <View style={{ width: 40 }} />
         </View>

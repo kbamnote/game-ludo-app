@@ -3,7 +3,7 @@
     "name": "CGP - Cockroach Game Party",
     "slug": "cgp-cockroach-game-party",
     "scheme": "cgp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -23,6 +23,9 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Use your microphone when you unmute in a Ludo voice room."
+      },
       "bundleIdentifier": "com.kbamnote.cgp"
     },
     "android": {
@@ -33,6 +36,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"],
       "package": "com.kbamnote.cgp",
       "versionCode": 1
     },
@@ -40,7 +44,21 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "serverUrl": "https://game-ludo-backend-production.up.railway.app"
+      "serverUrl": "https://game-ludo-backend-production.up.railway.app",
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "82e0b83c-4ef5-44be-9131-65adcc6f9c50"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/82e0b83c-4ef5-44be-9131-65adcc6f9c50"
     }
   }
 }

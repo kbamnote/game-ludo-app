@@ -4,11 +4,13 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
 import MatchScene from '../three/MatchScene'
+import SceneBoundary from '../three/SceneBoundary'
 import Icon from '../ui/Icon'
 import Glow from '../ui/Glow'
-import { C, F, R, S, TA } from '../theme'
+import { C, F, R, TA } from '../theme'
 import { useMatch, type PlayerConfig } from '../game/store'
 import { useOnline } from '../net/online'
+import { useProfile } from '../game/profile'
 import { SEAT_HEX, seatScore, tokensHome, type Seat } from '../game/rules'
 
 const TURN_SECONDS = 15
@@ -36,12 +38,10 @@ const DEFAULT_PLAYERS: PlayerConfig[] = [
 
 function PlayerChip({
   seat,
-  align,
   active,
   secondsLeft,
 }: {
   seat: Seat
-  align: 'left' | 'right'
   active: boolean
   secondsLeft: number
 }) {
@@ -64,10 +64,10 @@ function PlayerChip({
   const badge = SEAT_BADGE[seat]
 
   const avatar = (
-    <View>
+    <View style={styles.avatarSlot}>
       {active ? (
-        <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={56} height={56} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+        <>
+          <Svg width={42} height={42} viewBox="0 0 56 56" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
             <Circle cx={28} cy={28} r={21} stroke={C.arenaContainer} strokeWidth={4} fill="transparent" />
             <Circle
               cx={28}
@@ -82,7 +82,7 @@ function PlayerChip({
             />
           </Svg>
           <Image source={{ uri: AVATARS[seat] }} style={styles.avatarActive} />
-        </View>
+        </>
       ) : (
         <Image source={{ uri: AVATARS[seat] }} style={styles.avatar} />
       )}
@@ -92,44 +92,28 @@ function PlayerChip({
     </View>
   )
 
-  const label = (
-    <View style={{ alignItems: align === 'right' ? 'flex-end' : 'flex-start' }}>
-      <View style={styles.nameRow}>
-        {align === 'right' && <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[seat] }]} />}
-        <Text style={styles.playerName}>{player.name}</Text>
-        {align === 'left' && <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[seat] }]} />}
-      </View>
-      <Text style={[styles.playerStatus, { color: active ? C.arenaError : C.arenaOnSurfaceVariant }]}>{status}</Text>
-    </View>
-  )
-
   return (
     <View style={styles.playerChip}>
-      {align === 'left' ? (
-        <>
-          {avatar}
-          {label}
-        </>
-      ) : (
-        <>
-          {label}
-          {avatar}
-        </>
-      )}
+      {avatar}
+      <View style={styles.playerDetails}>
+        <Text numberOfLines={1} style={styles.playerName}>{player.name}</Text>
+        <Text style={[styles.playerStatus, { color: active ? SEAT_HEX[seat] : C.arenaOnSurfaceVariant }]}>{status}</Text>
+      </View>
+      <Text accessibilityLabel={`${seatScore(tokens, seat)} points`} style={styles.standingScore}>{seatScore(tokens, seat)}</Text>
     </View>
   )
 }
 
 export default function MatchArenaScreen() {
-  const params = useLocalSearchParams<{ table?: string }>()
+  const params = useLocalSearchParams<{ table?: string; cupRound?: string }>()
   const start = useMatch((s) => s.start)
   const players = useMatch((s) => s.players)
   const phase = useMatch((s) => s.phase)
   const current = useMatch((s) => s.current)
   const die = useMatch((s) => s.die)
   const moves = useMatch((s) => s.moves)
-  const tokens = useMatch((s) => s.tokens)
   const ranking = useMatch((s) => s.ranking)
+  const capturing = useMatch((s) => Boolean(s.animation?.captures.length))
   const pickToken = useMatch((s) => s.pickToken)
   const roll = useMatch((s) => s.roll)
   const mode = useMatch((s) => s.mode)
@@ -157,11 +141,13 @@ export default function MatchArenaScreen() {
     if (players.length === 0) start(table)
   }, [players.length, start, table, mode])
 
-  const humanSeat = useMemo(
-    () => (mode === 'online' ? mySeat : (players.find((p) => p.kind === 'human')?.seat ?? null)),
-    [players, mode, mySeat],
-  )
-  const isHumanTurn = humanSeat !== null && current === humanSeat
+  const isHumanTurn = mode === 'online' ? current === mySeat : players.some((p) => p.seat === current && p.kind === 'human')
+  const startedAt = useMatch((state) => state.startedAt)
+  useEffect(() => {
+    if (mode === 'local' && phase === 'ended' && params.cupRound !== undefined) {
+      useProfile.getState().finishCupRound(Number(params.cupRound), startedAt, ranking[0] === 0)
+    }
+  }, [mode, phase, params.cupRound, ranking, startedAt])
 
   // Turn clock. The countdown lives in a ref so the timeout action never runs
   // inside a state updater, which React would execute during render.
@@ -205,7 +191,9 @@ export default function MatchArenaScreen() {
   const callout =
     phase === 'ended'
       ? 'MATCH COMPLETE'
-      : !isHumanTurn
+      : phase === 'moving'
+        ? capturing ? 'CAPTURE!' : 'MOVING...'
+        : !isHumanTurn
         ? `${(players.find((p) => p.seat === current)?.name ?? 'OPPONENT').toUpperCase()} IS THINKING...`
         : phase === 'await-roll'
           ? 'YOUR TURN! TAP THE DICE'
@@ -218,7 +206,8 @@ export default function MatchArenaScreen() {
               : 'MOVING...'
 
   const hint =
-    phase === 'await-move' && isHumanTurn && moves.length
+    capturing ? 'Rescue crew returning the captured character to its yard'
+    : phase === 'await-move' && isHumanTurn && moves.length
       ? `${moves.length} pawn${moves.length > 1 ? 's' : ''} can move ${die} space${die === 1 ? '' : 's'}`
       : phase === 'await-roll' && isHumanTurn
         ? 'Tap the dice to roll'
@@ -229,7 +218,6 @@ export default function MatchArenaScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Glow size={320} color={C.arenaPrimaryContainer} opacity={0.22} style={{ top: -48, alignSelf: 'center' }} />
 
           {/* Top match bar */}
@@ -261,107 +249,56 @@ export default function MatchArenaScreen() {
             </View>
 
             <View style={styles.topGroup}>
-              <Pressable style={styles.squareButton} onPress={() => showTaunt('💬')}>
-                <Icon name="chat-bubble" size={20} color={C.arenaOnSurface} />
-              </Pressable>
               <Pressable style={styles.squareButton}>
                 <Icon name="volume-up" size={20} color={C.arenaOnSurfaceVariant} />
               </Pressable>
             </View>
           </View>
 
-          {/* Top two seats */}
-          <View style={styles.seatRow}>
-            <PlayerChip seat={0} align="left" active={current === 0 && phase !== 'ended'} secondsLeft={secondsLeft} />
-            <PlayerChip seat={1} align="right" active={current === 1 && phase !== 'ended'} secondsLeft={secondsLeft} />
-          </View>
-
-          {/* Centre 3D arena stage */}
-          <View style={styles.stageWrap}>
-            <View style={styles.stage}>
+          <View style={styles.stage}>
+            <SceneBoundary>
               <MatchScene />
+            </SceneBoundary>
 
-              <View style={styles.callout} pointerEvents="none">
-                <Icon name="star" size={16} color={isHumanTurn && phase !== 'ended' ? C.arenaOnSecondaryContainer : C.arenaOnSurface} />
-                <Text
-                  style={[
-                    styles.calloutText,
-                    { color: isHumanTurn && phase !== 'ended' ? C.arenaOnSecondaryContainer : C.arenaOnSurface },
-                  ]}
-                >
-                  {callout}
+            {phase === 'ended' && (
+              <View style={styles.endOverlay}>
+                <Icon name="emoji-events" size={48} color={C.arenaSecondaryContainer} />
+                <Text style={styles.endTitle}>
+                  {(players.find((p) => p.seat === ranking[0])?.name ?? '').toUpperCase()} WINS
                 </Text>
-              </View>
-
-              <View style={styles.dicePrompt} pointerEvents="none">
-                <Text style={styles.dicePromptText}>
-                  {phase === 'await-roll' && isHumanTurn ? 'TAP DICE!' : die ? `ROLLED ${die}` : 'DICE'}
-                </Text>
-              </View>
-
-              {taunt && (
-                <View style={styles.tauntWrap} pointerEvents="none">
-                  <Text style={styles.tauntEmoji}>{taunt}</Text>
-                </View>
-              )}
-
-              {phase === 'ended' && (
-                <View style={styles.endOverlay}>
-                  <Icon name="emoji-events" size={48} color={C.arenaSecondaryContainer} />
-                  <Text style={styles.endTitle}>
-                    {(players.find((p) => p.seat === ranking[0])?.name ?? '').toUpperCase()} WINS
-                  </Text>
-                  <View style={{ width: 220, gap: 4 }}>
-                    {ranking.map((seat, i) => (
-                      <View key={seat} style={styles.rankRow}>
-                        <View style={styles.rankLeft}>
-                          <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[seat] }]} />
-                          <Text style={styles.rankName}>{players.find((p) => p.seat === seat)?.name}</Text>
-                        </View>
-                        <Text style={styles.rankName}>#{i + 1}</Text>
+                <View style={{ width: 220, gap: 4 }}>
+                  {ranking.map((seat, i) => (
+                    <View key={seat} style={styles.rankRow}>
+                      <View style={styles.rankLeft}>
+                        <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[seat] }]} />
+                        <Text style={styles.rankName}>{players.find((p) => p.seat === seat)?.name}</Text>
                       </View>
-                    ))}
-                  </View>
-                  <Pressable
-                    style={styles.rematch}
-                    onPress={() => (mode === 'online' ? router.replace('/friends') : start(table))}
-                  >
-                    <Text style={styles.rematchText}>{mode === 'online' ? 'BACK TO ROOM' : 'REMATCH'}</Text>
-                  </Pressable>
+                      <Text style={styles.rankName}>#{i + 1}</Text>
+                    </View>
+                  ))}
                 </View>
-              )}
-            </View>
-          </View>
-
-          {/* Bottom two seats */}
-          <View style={styles.seatRow}>
-            <PlayerChip seat={3} align="left" active={current === 3 && phase !== 'ended'} secondsLeft={secondsLeft} />
-            <PlayerChip seat={2} align="right" active={current === 2 && phase !== 'ended'} secondsLeft={secondsLeft} />
-          </View>
-
-          {/* Taunts dock */}
-          <View style={styles.dock}>
-            <Text style={styles.dockLabel}>TAUNTS</Text>
-            <View style={styles.dockEmojis}>
-              {['😂', '👍', '😡', '🎲'].map((emoji) => (
-                <Pressable key={emoji} style={styles.emojiButton} onPress={() => showTaunt(emoji)}>
-                  <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                <Pressable
+                  style={styles.rematch}
+                  onPress={() => {
+                    if (params.cupRound !== undefined) router.dismissTo('/tournament')
+                    else if (mode === 'online') { leaveRoom(); router.replace('/friends') }
+                    else start(table)
+                  }}
+                >
+                  <Text style={styles.rematchText}>{params.cupRound !== undefined ? 'CUP STANDINGS' : mode === 'online' ? 'BACK TO LOBBY' : 'REMATCH'}</Text>
                 </Pressable>
-              ))}
-            </View>
-            <Pressable style={styles.fastButton} onPress={() => showTaunt('⚡')}>
-              <Icon name="send" size={14} color={C.arenaOnSecondaryContainer} />
-              <Text style={styles.fastText}>FAST</Text>
-            </Pressable>
+              </View>
+            )}
           </View>
 
-          {/* Move prompt */}
+          <ScrollView style={styles.footer} contentContainerStyle={styles.footerContent} showsVerticalScrollIndicator={false}>
           <View style={styles.prompt}>
             <View style={styles.promptLeft}>
               <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[current], width: 12, height: 12 }]} />
-              <Text style={styles.promptText} numberOfLines={1}>
-                {hint}
-              </Text>
+              <View style={styles.promptCopy}>
+                <Text style={styles.calloutText}>{callout}</Text>
+                {(capturing || canAutoMove) && <Text style={styles.promptText}>{hint}</Text>}
+              </View>
             </View>
             <Pressable
               style={[styles.autoButton, !canAutoMove && { opacity: 0.4 }]}
@@ -372,17 +309,24 @@ export default function MatchArenaScreen() {
             </Pressable>
           </View>
 
-          {/* Live standings */}
-          <View style={styles.standings}>
+          <View style={styles.seatRow}>
             {players.map((p) => (
-              <View key={p.seat} style={styles.standing}>
-                <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[p.seat] }]} />
-                <Text style={styles.standingName} numberOfLines={1}>
-                  {p.name}
-                </Text>
-                <Text style={styles.standingScore}>{seatScore(tokens, p.seat)}</Text>
-              </View>
+              <PlayerChip key={p.seat} seat={p.seat} active={current === p.seat && phase !== 'ended'} secondsLeft={secondsLeft} />
             ))}
+          </View>
+          <View style={styles.dock}>
+            <Text accessibilityLiveRegion="polite" style={taunt ? styles.tauntEmoji : styles.dockLabel}>{taunt ?? 'TAUNTS'}</Text>
+            <View style={styles.dockEmojis}>
+              {['💬', '😂', '👍', '😡', '🎲'].map((emoji) => (
+                <Pressable accessibilityRole="button" accessibilityLabel={`Send ${emoji} taunt`} key={emoji} style={styles.emojiButton} onPress={() => showTaunt(emoji)}>
+                  <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={styles.fastButton} onPress={() => showTaunt('⚡')}>
+              <Icon name="send" size={14} color={C.arenaOnSecondaryContainer} />
+              <Text style={styles.fastText}>FAST</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -395,7 +339,8 @@ const FILL = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } as c
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.arenaSurface },
-  scroll: { paddingBottom: 24, gap: 8 },
+  footer: { flexGrow: 0, flexShrink: 1, maxHeight: '45%' },
+  footerContent: { paddingVertical: 6, gap: 5 },
 
   topBar: {
     paddingHorizontal: 12,
@@ -435,42 +380,26 @@ const styles = StyleSheet.create({
   potLabel: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaSecondaryFixed },
   potValue: { fontFamily: F.arena, ...TA.headlineMd, color: C.arenaSecondary },
 
-  seatRow: { paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  playerChip: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  avatar: { width: 48, height: 48, borderRadius: R.full, backgroundColor: C.arenaHighest },
-  avatarActive: { width: 44, height: 44, borderRadius: R.full, backgroundColor: C.arenaHighest },
-  seatBadge: { position: 'absolute', bottom: -4, right: -4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: R.full },
+  seatRow: { paddingHorizontal: 8, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 5 },
+  playerChip: { width: '49%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, gap: 5, backgroundColor: C.arenaLow, borderRadius: 12 },
+  playerDetails: { flex: 1, minWidth: 0 },
+  avatarSlot: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 34, height: 34, borderRadius: R.full, backgroundColor: C.arenaHighest },
+  avatarActive: { width: 28, height: 28, borderRadius: R.full, backgroundColor: C.arenaHighest },
+  seatBadge: { position: 'absolute', bottom: 0, right: 0, paddingHorizontal: 4, borderRadius: R.full },
   seatBadgeText: { fontFamily: F.arena, ...TA.labelSm },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   seatDot: { width: 8, height: 8, borderRadius: R.full },
   playerName: { fontFamily: F.arena, ...TA.headlineMd, color: C.arenaOnSurface },
   playerStatus: { fontFamily: F.arena, ...TA.labelSm },
 
-  stageWrap: { paddingHorizontal: 12, marginVertical: 8 },
   stage: {
     width: '100%',
-    aspectRatio: 1,
-    borderRadius: 24,
+    flex: 1,
     overflow: 'hidden',
     backgroundColor: C.arenaLow,
   },
-  callout: {
-    position: 'absolute',
-    top: 20,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: R.full,
-    backgroundColor: C.arenaSecondaryContainer,
-  },
-  calloutText: { fontFamily: F.arena, ...TA.labelLg },
-  dicePrompt: { position: 'absolute', bottom: 12, alignSelf: 'center' },
-  dicePromptText: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaSecondaryFixed },
-  tauntWrap: { ...FILL, alignItems: 'center', justifyContent: 'center' },
-  tauntEmoji: { fontSize: 72 },
+  calloutText: { fontFamily: F.arena, ...TA.labelLg, color: C.arenaSecondaryFixed },
+  tauntEmoji: { fontSize: 25 },
   endOverlay: {
     ...FILL,
     backgroundColor: 'rgba(0,11,48,0.88)',
@@ -493,18 +422,19 @@ const styles = StyleSheet.create({
   rematchText: { fontFamily: F.arena, ...TA.labelLg, color: C.arenaOnPrimaryContainer },
 
   dock: {
-    marginHorizontal: 16,
+    marginHorizontal: 8,
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     borderRadius: 16,
     backgroundColor: C.arenaLow,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 4,
   },
   dockLabel: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaOnSurfaceVariant },
-  dockEmojis: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dockEmojis: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   emojiButton: {
     width: 36,
     height: 36,
@@ -525,7 +455,7 @@ const styles = StyleSheet.create({
   fastText: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaOnSecondaryContainer },
 
   prompt: {
-    marginHorizontal: 16,
+    marginHorizontal: 8,
     padding: 10,
     borderRadius: 16,
     backgroundColor: C.arenaHigh,
@@ -535,21 +465,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   promptLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  promptCopy: { flexShrink: 1 },
   promptText: { fontFamily: F.arenaBody, ...TA.bodySm, color: C.arenaOnSurface, flexShrink: 1 },
   autoButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: C.arenaTertiaryContainer },
   autoText: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaOnTertiaryContainer },
 
-  standings: { marginHorizontal: 16, flexDirection: 'row', gap: 8 },
-  standing: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: C.arenaLow,
-  },
-  standingName: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaOnSurfaceVariant, flexShrink: 1 },
   standingScore: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaOnSurface, marginLeft: 'auto' },
 })

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { presentationMs } from './moveTiming'
 import { chooseMove, type Difficulty } from './ai'
 import {
   applyMove,
@@ -35,6 +36,8 @@ export type Phase =
   | 'ended'
 
 export interface MoveAnimation {
+  startedAt: number
+  before: Token[]
   tokenId: string
   seat: Seat
   tokenIndex: number
@@ -104,7 +107,7 @@ export interface MatchState {
     phase: Phase
     ranking: Seat[]
     movableTokenIds: string[]
-  }) => void
+  }, resync?: boolean) => void
   applyServerMove: (m: PendingServerMove) => void
   detachServer: () => void
   roll: () => void
@@ -149,6 +152,14 @@ function nameOf(players: PlayerConfig[], seat: Seat) {
 }
 
 export const useMatch = create<MatchState>((set, get) => {
+  const queued: MoveAnimation[] = []
+  const present = (animation: MoveAnimation) => {
+    animation.startedAt = Date.now()
+    set({ phase: 'moving', animation })
+    later(() => {
+      if (get().animation === animation) get().finishAnimation()
+    }, presentationMs(animation.path.length, animation.captures.length))
+  }
   const appendLog = (seat: Seat, text: string) => {
     set({ log: [...get().log, { id: ++logId, seat, text }].slice(-40) })
   }
@@ -212,6 +223,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
     start: (players) => {
       clearTimer()
+      queued.length = 0
       const seats = players.map((p) => p.seat)
       set({
         mode: 'local',
@@ -309,15 +321,15 @@ export const useMatch = create<MatchState>((set, get) => {
       const token = tokens.find((t) => t.id === tokenId)
       if (!token) return
 
-      set({
-        phase: 'moving',
-        animation: {
-          tokenId,
-          seat: token.seat,
-          tokenIndex: token.index,
-          path: pathFor(move),
-          captures: move.captures,
-        },
+      set({ tokens: applyMove(tokens, move) })
+      present({
+        before: tokens,
+        startedAt: 0,
+        tokenId,
+        seat: token.seat,
+        tokenIndex: token.index,
+        path: pathFor(move),
+        captures: move.captures,
       })
     },
 
@@ -327,6 +339,11 @@ export const useMatch = create<MatchState>((set, get) => {
       if (!animation) return
 
       if (state.mode === 'online') {
+        const next = queued.shift()
+        if (next) {
+          present(next)
+          return
+        }
         const pending = state.pendingServer
         set({
           animation: null,
@@ -350,7 +367,7 @@ export const useMatch = create<MatchState>((set, get) => {
         return
       }
 
-      const next = applyMove(tokens, move)
+      const next = tokens
       const die = state.die ?? 0
       const who = nameOf(players, current)
 
@@ -362,7 +379,7 @@ export const useMatch = create<MatchState>((set, get) => {
         appendLog(current, `${who} opened a token with a six`)
       }
 
-      set({ tokens: next, animation: null, moves: [] })
+      set({ animation: null, moves: [] })
 
       const ranking = [...state.ranking]
       if (hasWon(next, current) && !ranking.includes(current)) {
@@ -390,6 +407,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
     attachServer: ({ players, mySeat, roll, move }) => {
       clearTimer()
+      queued.length = 0
       set({
         mode: 'online',
         mySeat,
@@ -412,12 +430,20 @@ export const useMatch = create<MatchState>((set, get) => {
     },
 
     /** Replace local state wholesale with the server's view. */
-    applyServerState: (snap) => {
+    applyServerState: (snap, resync = false) => {
       if (get().mode !== 'online') return
-      // While a token is mid-walk, hold the update so the animation can finish;
-      // applyServerMove already carries the state that follows it.
-      if (get().animation) return
+      if (resync) {
+        clearTimer()
+        queued.length = 0
+      } else {
+        const pending = get().pendingServer
+        if (pending && get().animation) {
+          set({ tokens: snap.tokens, pendingServer: { ...pending, ...snap } })
+          return
+        }
+      }
       set({
+        animation: null, pendingServer: null,
         tokens: snap.tokens,
         current: snap.current,
         die: snap.die,
@@ -430,40 +456,38 @@ export const useMatch = create<MatchState>((set, get) => {
     /** Animate a move the server already resolved, then adopt its state. */
     applyServerMove: (m) => {
       if (get().mode !== 'online') return
-      const token = get().tokens.find((t) => t.id === m.tokenId)
-      if (!token) {
-        set({
-          tokens: m.tokens,
-          current: m.current,
-          die: m.die,
-          phase: m.phase,
-          ranking: m.ranking,
-          moves: movesFromIds(m.movableTokenIds),
-        })
+      const before = get().tokens
+      const token = before.find((t) => t.id === m.tokenId)
+      if (!token || !m.path.length) {
+        get().applyServerState(m, true)
         return
       }
-      set({
-        pendingServer: m,
-        phase: 'moving',
-        animation: {
-          tokenId: m.tokenId,
-          seat: token.seat,
-          tokenIndex: token.index,
-          path: m.path,
-          captures: m.captures,
-        },
-      })
+      if (token.progress === m.path[m.path.length - 1]) return
+      const animation: MoveAnimation = {
+        before, startedAt: 0,
+        tokenId: m.tokenId,
+        seat: token.seat,
+        tokenIndex: token.index,
+        path: m.path,
+        captures: m.captures,
+      }
+      set({ tokens: m.tokens, pendingServer: m })
+      if (get().animation) queued.push(animation)
+      else present(animation)
     },
 
     detachServer: () => {
       clearTimer()
-      set({ mode: 'local', mySeat: null, netRoll: null, netMove: null, pendingServer: null })
+      queued.length = 0
+      set({ mode: 'local', mySeat: null, netRoll: null, netMove: null, pendingServer: null, animation: null })
     },
 
     reset: () => {
       clearTimer()
+      queued.length = 0
       set({
         tokens: [],
+        pendingServer: null,
         players: [],
         seats: [],
         phase: 'await-roll',

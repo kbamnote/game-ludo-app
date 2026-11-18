@@ -132,8 +132,14 @@ single most likely fix.
 
 ## Screens
 
-Ported: **Splash**, **Home**, **Live 3D Match Arena**.
-The other 12 Stitch designs are routed stubs, matching the web build.
+The lobby links to public tables, private friend rooms, pass-and-play setup,
+computer matches, and the three-round solo Midnight Cup. Daily Spin, Lucky 7,
+season milestones, and lobby pawn purchases share the device's saved profile.
+The reward inbox shows current availability. Voice Adda hosts the game's own
+four-player lounge inside the app. Players share an eight-character code and
+unmute to talk. The configured HTTPS game backend serves the lounge and relays
+live audio. An updated native build includes the embedded view and microphone
+permissions. Public tables require the server's `room:quick` event.
 
 ## The Splash screen
 

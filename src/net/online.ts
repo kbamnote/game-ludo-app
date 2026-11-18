@@ -16,6 +16,7 @@ export interface RoomMember {
 }
 
 export interface RoomSnapshot {
+  publicTable?: boolean
   code: string
   hostId: string
   phase: 'lobby' | 'playing' | 'finished'
@@ -45,7 +46,7 @@ interface OnlineState {
   room: RoomSnapshot | null
 
   connect: () => Promise<void>
-  createRoom: () => Promise<boolean>
+  createRoom: (publicTable?: boolean) => Promise<boolean>
   joinRoom: (code: string) => Promise<boolean>
   setReady: (ready: boolean) => void
   startMatch: () => Promise<boolean>
@@ -108,6 +109,8 @@ export const useOnline = create<OnlineState>((set, get) => {
 
     connect: async () => {
       if (socket?.connected) {
+        const { playerId, name } = useIdentity.getState()
+        socket.emit('identify', { playerId, name })
         set({ status: 'connected' })
         return
       }
@@ -116,6 +119,7 @@ export const useOnline = create<OnlineState>((set, get) => {
       const identity = await identityReady()
 
       if (!socket) {
+        let restoringRoom = false
         socket = io(SERVER_URL, {
           // Prefer websocket, but keep long-polling as a fallback: some mobile
           // carriers and corporate Wi-Fi block raw websocket upgrades.
@@ -133,6 +137,7 @@ export const useOnline = create<OnlineState>((set, get) => {
 
           // Re-enter the room after a drop so a flaky network does not end the match.
           const code = get().room?.code
+          restoringRoom = Boolean(code)
           if (code) socket?.emit('room:join', { code })
         })
 
@@ -145,10 +150,11 @@ export const useOnline = create<OnlineState>((set, get) => {
           const previous = get().room
           set({ room })
 
-          if (room.phase === 'playing' && previous?.phase !== 'playing') bindMatch(room)
+          if (room.phase === 'playing' && (previous?.phase !== 'playing' || useMatch.getState().mode !== 'online')) bindMatch(room)
           else if (room.match && useMatch.getState().mode === 'online') {
-            useMatch.getState().applyServerState(room.match)
+            useMatch.getState().applyServerState(room.match, restoringRoom)
           }
+          restoringRoom = false
         })
 
         socket.on('match:started', (room: RoomSnapshot) => {
@@ -181,10 +187,10 @@ export const useOnline = create<OnlineState>((set, get) => {
       socket.emit('identify', { playerId: identity.playerId, name: identity.name })
     },
 
-    createRoom: async () => {
+    createRoom: async (publicTable = false) => {
       set({ busy: true, error: null })
       await get().connect()
-      const ack = await emitAck('room:create')
+      const ack = await emitAck(publicTable ? 'room:quick' : 'room:create')
       set({ busy: false })
       if (!ack.ok) {
         set({ error: ack.error ?? 'Could not create the room' })

@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { router } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   CurrencyPill,
@@ -30,30 +30,25 @@ import Icon from '../ui/Icon'
 import Backdrop from '../ui/Backdrop'
 import BrandLockup from '../ui/BrandLockup'
 import { A } from '../theme'
-import { formatCompact, useProfile } from '../game/profile'
-import type { PlayerConfig } from '../game/store'
-
-const PRACTICE_TABLE: PlayerConfig[] = [
-  { seat: 0, name: 'You', kind: 'human' },
-  { seat: 1, name: 'Vikram', kind: 'bot', difficulty: 'sharp' },
-  { seat: 2, name: 'Raj', kind: 'bot', difficulty: 'sharp' },
-  { seat: 3, name: 'Elena', kind: 'bot', difficulty: 'casual' },
-]
+import { BADGES, formatCompact, useProfile } from '../game/profile'
+import { practice } from '../game/localTable'
 
 function TopBar() {
   const insets = useSafeAreaInsets()
   const coins = useProfile((s) => s.coins)
   const gems = useProfile((s) => s.gems)
   const level = useProfile((s) => s.level)
+  const badgeId = useProfile((s) => s.badge)
+  const badge = BADGES.find((item) => item.id === badgeId) ?? BADGES[0]
 
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
       <View style={styles.topRow}>
         {/* Avatar with level chip */}
-        <Pressable style={styles.avatarWrap}>
+        <Pressable accessibilityLabel="Player profile" style={styles.avatarWrap} onPress={() => router.push('/profile')}>
           <LinearGradient colors={[A.goldLite, A.goldMid]} style={styles.avatarRing}>
             <View style={styles.avatarInner}>
-              <Pawn size={22} color="#4aa3ff" dark="#14539e" />
+              <Pawn size={22} color={badge.color} dark={badge.dark} />
             </View>
           </LinearGradient>
           <View style={styles.onlineDot} />
@@ -62,8 +57,8 @@ function TopBar() {
           </View>
         </Pressable>
 
-        <IconButton icon={<Icon name="settings" size={18} color="#dbe9ff" />} />
-        <IconButton icon={<Icon name="mail" size={17} color="#dbe9ff" />} badge="1" />
+        <IconButton label="Player settings" icon={<Icon name="settings" size={18} color="#dbe9ff" />} onPress={() => router.push('/profile')} />
+        <IconButton label="Reward inbox" icon={<Icon name="mail" size={17} color="#dbe9ff" />} onPress={() => router.push('/inbox')} />
 
         <View style={{ flex: 1 }} />
 
@@ -78,15 +73,10 @@ function TopBar() {
   )
 }
 
-function IconButton({ icon, badge, onPress }: { icon: ReactNode; badge?: string; onPress?: () => void }) {
+function IconButton({ icon, label, onPress }: { icon: ReactNode; label: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.iconButton} onPress={onPress}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.iconButton} onPress={onPress}>
       {icon}
-      {badge && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badge}</Text>
-        </View>
-      )}
     </Pressable>
   )
 }
@@ -134,12 +124,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
   const luckyRolls = useProfile((s) => s.luckyRolls)
-  const [tick, setTick] = useState(0)
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => clearInterval(id)
-  }, [])
 
   // Everything below the hero has a fixed height so the hero can absorb the
   // slack. That is what keeps this screen from ever needing to scroll.
@@ -187,7 +171,7 @@ export default function HomeScreen() {
           <RailBadge size={compact ? 40 : 46} caption="GOALS" onPress={() => router.push('/events')}>
             <Icon name="gps-fixed" size={20} color="#ff8a5c" />
           </RailBadge>
-          <RailBadge size={compact ? 40 : 46} caption="HELP">
+          <RailBadge size={compact ? 40 : 46} caption="HELP" onPress={() => router.push('/help')}>
             <OutlineText size={18} width={1.8} color={A.gold} outline={A.goldShadow}>
               ?
             </OutlineText>
@@ -207,15 +191,14 @@ export default function HomeScreen() {
             height={tileH}
             emblem={<GlobeEmblem size={compact ? 30 : 36} />}
             label="ONLINE"
-            players="192,755"
+            players="2–4"
             onPress={() => router.push('/online')}
           />
           <ModeTile
             width={triple}
             height={tileH}
             emblem={<SwordsEmblem size={compact ? 30 : 36} />}
-            label="TEAM UP"
-            players="3,368"
+            label="MODES"
             onPress={() => router.push('/modes')}
           />
           <ModeTile
@@ -223,7 +206,7 @@ export default function HomeScreen() {
             height={tileH}
             emblem={<HeartsEmblem size={compact ? 30 : 36} />}
             label="FRIENDS"
-            players="15,577"
+            players="2–4"
             onPress={() => router.push('/friends')}
           />
         </View>
@@ -234,7 +217,7 @@ export default function HomeScreen() {
             height={tileH}
             emblem={<VsEmblem size={compact ? 30 : 36} />}
             label="COMPUTER"
-            onPress={() => router.push({ pathname: '/match', params: { table: JSON.stringify(PRACTICE_TABLE) } })}
+            onPress={practice}
           />
           <ModeTile
             width={duo}
@@ -254,20 +237,19 @@ export default function HomeScreen() {
           style={{ width: featureH + 10 }}
           contentStyle={{ height: featureH, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Die size={featureH * 0.5} pips={7 > 6 ? 6 : 6} />
+          <Die size={featureH * 0.5} pips={6} />
         </GoldPanel>
 
-        <GoldPanel
+        <View style={{ flex: 1, marginHorizontal: 10 }}><GoldPanel
           onPress={() => router.push('/tournament')}
           radius={12}
-          style={{ flex: 1, marginHorizontal: 10 }}
           contentStyle={{ height: featureH, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}
         >
           <TrophyEmblem size={featureH * 0.56} />
           <OutlineText size={compact ? 17 : 20} width={2.6} color={A.gold} outline={A.textOutline}>
             TOURNAMENT
           </OutlineText>
-        </GoldPanel>
+        </GoldPanel></View>
 
         <GoldPanel
           onPress={() => router.push('/spin')}
@@ -282,12 +264,12 @@ export default function HomeScreen() {
       {/* Season claim, with the free-coins promo tucked into the same band so
           the two can never overlap on a short screen */}
       <View style={styles.claimBand}>
-        <Pressable style={styles.freeAd} onPress={() => router.push('/events')}>
+        <Pressable style={styles.freeAd} onPress={() => router.push('/lucky7')}>
           <OutlineText size={9} width={1.4} color={A.text} outline={A.redDeep}>
-            FREE
+            ROLLS
           </OutlineText>
-          <Coin size={18} />
-          <Text style={styles.freeAdText}>x{luckyRolls + 4}</Text>
+          <Die size={18} />
+          <Text style={styles.freeAdText}>×{luckyRolls}</Text>
         </Pressable>
 
         <Pressable style={styles.claimWrap} onPress={() => router.push('/events')}>
