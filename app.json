@@ -3,7 +3,7 @@
     "name": "CGP - Cockroach Game Party",
     "slug": "cgp-cockroach-game-party",
     "scheme": "cgp",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -18,6 +18,14 @@
           "imageWidth": 220,
           "resizeMode": "contain",
           "backgroundColor": "#1649a0"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "# Expo Modules constructs GLView by reflection when a match mounts.\n-keep class expo.modules.gl.GLView { public <init>(android.content.Context, expo.modules.kotlin.AppContext); }\n# EXGLContextPrepare looks up this callback by name through JNI.\n-keepclassmembers class expo.modules.gl.GLContext { public void flush(); }"
+          }
         }
       ]
     ],
