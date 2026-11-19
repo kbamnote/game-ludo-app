@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Character } from './character'
 import { presentationMs } from './moveTiming'
 import { chooseMove, type Difficulty } from './ai'
 import {
@@ -21,7 +22,7 @@ export interface PlayerConfig {
   name: string
   kind: PlayerKind
   difficulty?: Difficulty
-  avatar?: string
+  character?: Character | null
 }
 
 export type Phase =
@@ -54,6 +55,7 @@ export interface LogEntry {
 
 /** Where the authority for this match lives. */
 export type MatchMode = 'local' | 'online'
+export type LocalVariant = 'classic' | 'teams' | 'quick'
 
 /** A move the server has already resolved, waiting to be animated. */
 export interface PendingServerMove {
@@ -70,6 +72,7 @@ export interface PendingServerMove {
 
 export interface MatchState {
   mode: MatchMode
+  variant: LocalVariant
   /** Which seat this device controls online; null when playing locally. */
   mySeat: Seat | null
   /** Set by the net layer so roll/pick can be forwarded to the server. */
@@ -82,6 +85,7 @@ export interface MatchState {
   tokens: Token[]
   current: Seat
   die: number | null
+  passedRoll: { seat: Seat; die: number; reason: 'no-move' | 'three-sixes' } | null
   phase: Phase
   moves: Move[]
   animation: MoveAnimation | null
@@ -92,7 +96,7 @@ export interface MatchState {
   turnCount: number
   startedAt: number
 
-  start: (players: PlayerConfig[]) => void
+  start: (players: PlayerConfig[], variant?: LocalVariant) => void
   /** Hand control of this match to a server. */
   attachServer: (opts: {
     players: PlayerConfig[]
@@ -173,8 +177,8 @@ export const useMatch = create<MatchState>((set, get) => {
     }
   }
 
-  const advance = () => {
-    const { seats, current, ranking, turnCount } = get()
+  const advance = (reason?: 'no-move' | 'three-sixes') => {
+    const { seats, current, die, ranking, turnCount } = get()
     const remaining = seats.filter((s) => !ranking.includes(s))
     if (remaining.length === 0) {
       set({ phase: 'ended' })
@@ -191,7 +195,7 @@ export const useMatch = create<MatchState>((set, get) => {
     }
     set({
       current: next,
-      die: null,
+      passedRoll: reason && die !== null ? { seat: current, die, reason } : null,
       phase: 'await-roll',
       moves: [],
       consecutiveSixes: 0,
@@ -202,6 +206,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
   return {
     mode: 'local',
+    variant: 'classic',
     mySeat: null,
     netRoll: null,
     netMove: null,
@@ -212,6 +217,7 @@ export const useMatch = create<MatchState>((set, get) => {
     tokens: [],
     current: 0,
     die: null,
+    passedRoll: null,
     phase: 'await-roll',
     moves: [],
     animation: null,
@@ -221,12 +227,13 @@ export const useMatch = create<MatchState>((set, get) => {
     turnCount: 0,
     startedAt: 0,
 
-    start: (players) => {
+    start: (players, variant = 'classic') => {
       clearTimer()
       queued.length = 0
       const seats = players.map((p) => p.seat)
       set({
         mode: 'local',
+        variant,
         mySeat: null,
         netRoll: null,
         netMove: null,
@@ -236,6 +243,7 @@ export const useMatch = create<MatchState>((set, get) => {
         tokens: createTokens(seats),
         current: seats[0],
         die: null,
+        passedRoll: null,
         phase: 'await-roll',
         moves: [],
         animation: null,
@@ -259,7 +267,7 @@ export const useMatch = create<MatchState>((set, get) => {
         return
       }
 
-      set({ phase: 'rolling', die: rollDie() })
+      set({ phase: 'rolling', die: rollDie(), passedRoll: null })
       later(() => get().settleRoll(), 900)
     },
 
@@ -273,11 +281,11 @@ export const useMatch = create<MatchState>((set, get) => {
       if (sixes >= 3) {
         appendLog(current, `${nameOf(players, current)} rolled three sixes — turn forfeited`)
         set({ consecutiveSixes: 0 })
-        advance()
+        advance('three-sixes')
         return
       }
 
-      const moves = legalMoves(tokens, current, die)
+      const moves = legalMoves(tokens, current, die, state.variant === 'teams')
       set({ moves, consecutiveSixes: sixes })
 
       if (moves.length === 0) {
@@ -286,7 +294,7 @@ export const useMatch = create<MatchState>((set, get) => {
           set({ phase: 'await-roll' })
           maybeBot()
         } else {
-          advance()
+          advance('no-move')
         }
         return
       }
@@ -382,6 +390,17 @@ export const useMatch = create<MatchState>((set, get) => {
       set({ animation: null, moves: [] })
 
       const ranking = [...state.ranking]
+      const partner = ((current + 2) % 4) as Seat
+      if (state.variant === 'quick' && move.finishes) {
+        set({ ranking: [current], phase: 'ended' })
+        clearTimer()
+        return
+      }
+      if (state.variant === 'teams' && hasWon(next, current) && hasWon(next, partner)) {
+        set({ ranking: [current, partner], phase: 'ended' })
+        clearTimer()
+        return
+      }
       if (hasWon(next, current) && !ranking.includes(current)) {
         ranking.push(current)
         appendLog(current, `${who} finished #${ranking.length}`)
@@ -410,6 +429,7 @@ export const useMatch = create<MatchState>((set, get) => {
       queued.length = 0
       set({
         mode: 'online',
+        variant: 'classic',
         mySeat,
         netRoll: roll,
         netMove: move,
@@ -419,6 +439,7 @@ export const useMatch = create<MatchState>((set, get) => {
         tokens: createTokens(players.map((p) => p.seat)),
         current: players[0]?.seat ?? 0,
         die: null,
+        passedRoll: null,
         phase: 'await-roll',
         moves: [],
         animation: null,
@@ -492,6 +513,7 @@ export const useMatch = create<MatchState>((set, get) => {
         seats: [],
         phase: 'await-roll',
         die: null,
+        passedRoll: null,
         moves: [],
         animation: null,
         ranking: [],

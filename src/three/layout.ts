@@ -8,6 +8,7 @@ export const GRID = 15
  * Chassis spans -0.4..0.4, deck slab 0.35..0.65, tiles 0.57..0.83.
  */
 export const DECK_Y = 0.83
+export const BOARD_CHARACTER_SCALE = 1.15
 /** Centre height of a tile / yard plate box. */
 export const TILE_Y = 0.7
 /** Thickness of a tile; its radius must stay under half of this. */

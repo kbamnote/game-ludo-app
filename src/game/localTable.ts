@@ -1,13 +1,14 @@
 import { router } from 'expo-router'
 import { useOnline } from '../net/online'
-import { useMatch, type PlayerConfig } from './store'
+import { useMatch, type LocalVariant, type PlayerConfig } from './store'
 import { useIdentity } from './identity'
 import type { Difficulty } from './ai'
 
-export function openTable(players: PlayerConfig[], cupRound?: number) {
+export function openTable(players: PlayerConfig[], cupRound?: number, variant?: LocalVariant) {
   if (useOnline.getState().room) useOnline.getState().leaveRoom()
-  useMatch.getState().start(players)
+  useMatch.getState().start(players, variant)
   router.push({ pathname: '/match', params: { table: JSON.stringify(players),
+    ...(variant === undefined ? {} : { variant }),
     ...(cupRound === undefined ? {} : { cupRound: String(cupRound) }) } })
 }
 

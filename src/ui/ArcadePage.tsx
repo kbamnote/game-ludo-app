@@ -17,7 +17,9 @@ export function useClock() {
   return now
 }
 
-export function ArcadePage({ title, children }: { title: string; children: ReactNode }) {
+export function ArcadePage({ title, children, onBack, footer }: {
+  title: string; children: ReactNode; onBack?: () => void; footer?: ReactNode
+}) {
   const [ready, setReady] = useState(useProfile.persist.hasHydrated)
   useEffect(() => {
     const unsub = useProfile.persist.onFinishHydration(() => setReady(true))
@@ -29,14 +31,15 @@ export function ArcadePage({ title, children }: { title: string; children: React
       <SafeAreaView style={{ flex: 1 }}>
         <View style={s.header}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back" style={s.back}
-            onPress={() => router.canGoBack() ? router.back() : router.replace('/home')}>
+            onPress={onBack ?? (() => router.canGoBack() ? router.back() : router.replace('/home'))}>
             <Icon name="arrow-back" color={A.goldLite} />
           </Pressable>
           <Text accessibilityRole="header" style={s.headerTitle}>{title}</Text>
         </View>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.body}>
+        <ScrollView style={footer ? s.pageScroll : undefined} keyboardShouldPersistTaps="handled" contentContainerStyle={s.body}>
           {ready ? children : <Text style={s.copy}>Loading your profile…</Text>}
         </ScrollView>
+        {ready && footer && <View style={s.pageFooter}>{footer}</View>}
       </SafeAreaView>
     </LinearGradient>
   )
@@ -68,6 +71,8 @@ export function MenuRow({ art, title, detail, onPress }: { art: ReactNode; title
 }
 
 export const s = StyleSheet.create({
+  pageScroll: { flex: 1 },
+  pageFooter: { flexShrink: 0, alignSelf: 'center', width: '100%', maxWidth: 560, paddingHorizontal: 16, paddingVertical: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 10, width: '100%', maxWidth: 560, alignSelf: 'center' },
   back: { width: 44, height: 44, backgroundColor: '#0b234e', borderColor: '#4265a1', borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontFamily: DISPLAY, color: '#fff3cc', fontSize: 23, flexShrink: 1 },

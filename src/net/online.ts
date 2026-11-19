@@ -4,6 +4,9 @@ import { SERVER_URL } from './config'
 import { identityReady, useIdentity } from '../game/identity'
 import { useMatch, type PlayerConfig, type Phase } from '../game/store'
 import type { Seat, Token } from '../game/rules'
+import { isCharacter, type Character } from '../game/character'
+import { REACTIONS, type ReactionKind, type ReactionRequest } from '../game/reactions'
+import { isSoundId } from '../game/soundboard'
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error'
 
@@ -13,6 +16,7 @@ export interface RoomMember {
   seat: Seat | null
   ready: boolean
   connected: boolean
+  character?: Character
 }
 
 export interface RoomSnapshot {
@@ -37,6 +41,15 @@ interface Ack {
   ok: boolean
   error?: string
   snapshot?: RoomSnapshot
+  ticket?: string
+}
+
+export async function requestMatchVoice() {
+  const ack = await emitAck('match:voice')
+  if (!ack.ok || !ack.ticket || !/^[A-Za-z0-9_-]{32}$/.test(ack.ticket)) {
+    throw Error(ack.error ?? 'Match voice is unavailable on this server.')
+  }
+  return SERVER_URL + '/voice/#match=' + encodeURIComponent(ack.ticket)
 }
 
 interface OnlineState {
@@ -55,6 +68,24 @@ interface OnlineState {
 }
 
 let socket: Socket | null = null
+const reactionListeners = new Set<(reaction: ReactionRequest) => void>()
+const soundListeners = new Set<(clip: number) => void>()
+export function onMatchSound(listener: (clip: number) => void) {
+  soundListeners.add(listener)
+  return () => { soundListeners.delete(listener) }
+}
+export async function sendMatchSound(clip: number) {
+  const ack = await emitAck('match:sound', { clip })
+  if (!ack.ok) throw Error(ack.error ?? 'Could not play the sound.')
+}
+export function onMatchReaction(listener: (reaction: ReactionRequest) => void) {
+  reactionListeners.add(listener)
+  return () => { reactionListeners.delete(listener) }
+}
+export async function sendMatchReaction(kind: ReactionKind, to: Seat) {
+  const ack = await emitAck('match:reaction', { kind, to })
+  if (!ack.ok) throw Error(ack.error ?? 'Could not send the reaction.')
+}
 
 function emitAck(event: string, payload: unknown = {}): Promise<Ack> {
   return new Promise((resolve) => {
@@ -81,7 +112,11 @@ function playersFrom(room: RoomSnapshot): PlayerConfig[] {
   return room.members
     .filter((m): m is RoomMember & { seat: Seat } => m.seat !== null)
     .sort((a, b) => a.seat - b.seat)
-    .map((m) => ({ seat: m.seat, name: m.name, kind: 'human' as const }))
+    .map((m) => ({
+      seat: m.seat, name: m.name, kind: 'human' as const,
+      character: isCharacter(m.character) ? m.character :
+        m.playerId === useIdentity.getState().playerId ? useIdentity.getState().character : null,
+    }))
 }
 
 export const useOnline = create<OnlineState>((set, get) => {
@@ -138,10 +173,18 @@ export const useOnline = create<OnlineState>((set, get) => {
           // Re-enter the room after a drop so a flaky network does not end the match.
           const code = get().room?.code
           restoringRoom = Boolean(code)
-          if (code) socket?.emit('room:join', { code })
+          if (code) socket?.emit('room:join', { code, character: id.character })
         })
 
         socket.on('disconnect', () => set({ status: 'reconnecting' }))
+        socket.on('match:reaction', (event: (ReactionRequest & { roomCode: string }) | null) => {
+          if (!event || event.roomCode !== get().room?.code || !REACTIONS.some(item => item.id === event.kind)) return
+          for (const listener of reactionListeners) listener(event)
+        })
+        socket.on('match:sound', (event: { roomCode: string; clip: unknown } | null) => {
+          if (!event || event.roomCode !== get().room?.code || !isSoundId(event.clip)) return
+          for (const listener of soundListeners) listener(event.clip)
+        })
         socket.on('connect_error', (err: Error) =>
           set({ status: 'error', error: `Cannot reach the server (${err.message})` }),
         )
@@ -190,7 +233,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     createRoom: async (publicTable = false) => {
       set({ busy: true, error: null })
       await get().connect()
-      const ack = await emitAck(publicTable ? 'room:quick' : 'room:create')
+      const ack = await emitAck(publicTable ? 'room:quick' : 'room:create', { character: useIdentity.getState().character })
       set({ busy: false })
       if (!ack.ok) {
         set({ error: ack.error ?? 'Could not create the room' })
@@ -203,7 +246,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     joinRoom: async (code: string) => {
       set({ busy: true, error: null })
       await get().connect()
-      const ack = await emitAck('room:join', { code: code.trim() })
+      const ack = await emitAck('room:join', { code: code.trim(), character: useIdentity.getState().character })
       set({ busy: false })
       if (!ack.ok) {
         set({ error: ack.error ?? 'Could not join' })

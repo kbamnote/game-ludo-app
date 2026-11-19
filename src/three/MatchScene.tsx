@@ -1,10 +1,11 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native'
 import * as THREE from 'three'
 import { cellFor, SEAT_HEX, type Token } from '../game/rules'
 import { RESCUE_MS, STEP_MS } from '../game/moveTiming'
 import { useMatch, type MoveAnimation } from '../game/store'
+import { useIdentity } from '../game/identity'
 import Board3D from './Board3D'
 import Dice3D from './Dice3D'
 import Pawn3D, { type CharacterPose } from './Pawn3D'
@@ -13,13 +14,21 @@ import SceneErrorSink from './SceneErrorSink'
 import { DECK_Y, toWorld } from './layout'
 import { boardModel, useGameModel } from './useCharacterModel'
 import { ease, rescuePose, rescueSite, rescueTime, walkingPose } from './moveScene'
-import { useBoardGesture, type BoardView } from './useBoardGesture'
+import { DEFAULT_BOARD_ZOOM, useBoardGesture, type BoardView } from './useBoardGesture'
 import { pickTokenAt } from './pickTokenAt'
+import { reactionAnchor, REACTION_DURATION, REACTION_HIT, type Reaction } from '../game/reactions'
+import { FlyingReaction, reactionPath } from './Reaction3D'
+import { DANCE_MS } from '../game/soundboard'
 
-function AnimatedToken({ token, move, selectable }: {
-  token: Token; move: MoveAnimation | null; selectable: boolean
+function AnimatedToken({ token, move, selectable, reaction, danceStartedAt }: {
+  token: Token; move: MoveAnimation | null; selectable: boolean; reaction: Reaction | null; danceStartedAt: RefObject<number>
 }) {
   const group = useRef<THREE.Group>(null)
+  const online = useMatch(s => s.mode === 'online')
+  const player = useMatch(s => s.players.find(p => p.seat === token.seat))
+  const localCharacter = useIdentity(s => s.character)
+  const character = player?.character !== undefined ? player.character
+    : !online && token.seat === 0 && player?.kind === 'human' ? localCharacter : null
   const pose = useRef<CharacterPose>({ clip: 'Idle', seconds: 0 })
   const rest = useMemo(() => toWorld(cellFor(token)), [token])
   const victimIndex = move?.captures.indexOf(token.id) ?? -1
@@ -33,6 +42,28 @@ function AnimatedToken({ token, move, selectable }: {
     g.position.set(rest[0], DECK_Y + .07, rest[1])
     g.rotation.set(0, .48, 0, 'YXZ')
     g.visible = true
+    const danceElapsed = Date.now() - danceStartedAt.current
+    if (danceElapsed >= 0 && danceElapsed < DANCE_MS && victimIndex < 0 && move?.tokenId !== token.id) {
+      const beat = danceElapsed * Math.PI / 245 + token.index * .32
+      const weight = ease(danceElapsed, 0, 120) * (1 - ease(danceElapsed, DANCE_MS - 220, DANCE_MS))
+      g.position.y += .43 * Math.abs(Math.sin(beat)) * weight
+      g.position.x += .16 * Math.sin(beat) * weight
+      g.rotation.z = .36 * Math.sin(beat) * weight
+      g.rotation.y += .62 * Math.cos(beat * .5) * weight
+      p.clip = 'Walk'
+      p.seconds = danceElapsed / 470 + token.index * .07
+    }
+    if (reaction && victimIndex < 0) {
+      const elapsed = Date.now() - reaction.startedAt
+      if (reaction.sender.id === token.id && move?.tokenId !== token.id && elapsed >= 0 && elapsed < 450) {
+        g.rotation.y = reactionPath(reaction, elapsed).yaw
+        g.rotation.x = -.24 * ease(elapsed, 0, 140) * (1 - ease(elapsed, 210, 450))
+      }
+      if (reaction.receiver.id === token.id || (reaction.kind === 'bomb' && token.seat === reaction.to)) {
+        const fall = ease(elapsed, REACTION_HIT, REACTION_HIT + 210) * (1 - ease(elapsed, 2080, REACTION_DURATION))
+        g.rotation.x = -fall * 1.45
+      }
+    }
     if (!move) return
     const elapsed = Math.max(0, Date.now() - move.startedAt)
     if (move.tokenId === token.id) {
@@ -63,11 +94,11 @@ function AnimatedToken({ token, move, selectable }: {
     }
   }, -2)
   return <group name={token.id} ref={group} position={[rest[0], DECK_Y + .07, rest[1]]}>
-    <Pawn3D seat={token.seat} pose={pose} selectable={selectable} />
+    <Pawn3D seat={token.seat} character={character} pose={pose} selectable={selectable} rescuePatient={victimIndex >= 0} />
   </group>
 }
 
-function Players() {
+function Players({ reaction, danceStartedAt }: { reaction: Reaction | null; danceStartedAt: RefObject<number> }) {
   const currentTokens = useMatch((s) => s.tokens)
   const animation = useMatch((s) => s.animation)
   const moves = useMatch((s) => s.moves)
@@ -75,7 +106,7 @@ function Players() {
     ? s.current === s.mySeat : s.players.some(p => p.seat === s.current && p.kind === 'human')))
   const tokens = animation?.before ?? currentTokens
   return <>
-    {tokens.map(token => <AnimatedToken key={token.id} token={token} move={animation}
+    {tokens.map(token => <AnimatedToken key={token.id} token={token} move={animation} reaction={reaction} danceStartedAt={danceStartedAt}
       selectable={canPick && moves.some(m => m.tokenId === token.id)} />)}
     {animation?.captures.map((id, index) => {
       const victim = tokens.find(t => t.id === id)
@@ -119,11 +150,19 @@ function trayDistance(angle: number) {
   return BOARD_HALF_SIDE * (Math.abs(Math.sin(angle)) + Math.abs(Math.cos(angle))) + TRAY_RADIUS + .3
 }
 
-function CameraRig({ view, setTapHandler }: Pick<ReturnType<typeof useBoardGesture>, 'view' | 'setTapHandler'>) {
+function CameraRig({ view, setTapHandler, reaction, danceStartedAt }: Pick<ReturnType<typeof useBoardGesture>, 'view' | 'setTapHandler'> & {
+  reaction: Reaction | null; danceStartedAt: RefObject<number>
+}) {
   const move = useMatch((s) => s.animation)
+  const tokens = useMatch(s => s.tokens)
+  const seats = useMatch(s => s.seats)
+  const dancePositions = useMemo(() => seats.flatMap(seat => {
+    const actor = reactionAnchor(tokens, seat)
+    return actor ? [toWorld(cellFor(actor))] : []
+  }), [seats, tokens])
   const get = useThree(s => s.get)
   useLayoutEffect(() => {
-    const raycaster = new THREE.Raycaster()
+    const target = new THREE.Vector3()
     setTapHandler((x, y) => {
       const state = useMatch.getState()
       const human = state.mode === 'online' ? state.current === state.mySeat : state.players.some(p => p.seat === state.current && p.kind === 'human')
@@ -136,12 +175,17 @@ function CameraRig({ view, setTapHandler }: Pick<ReturnType<typeof useBoardGestu
       }
       const tray = scene.getObjectByName('dice-tray')
       if (!tray) return
-      raycaster.setFromCamera(new THREE.Vector2(x / size.width * 2 - 1, 1 - y / size.height * 2), camera)
-      if (raycaster.intersectObject(tray, true).length) state.roll()
+      tray.getWorldPosition(target)
+      target.y += 1.17
+      target.project(camera)
+      const dx = x - (target.x + 1) * size.width / 2
+      const dy = y - (1 - target.y) * size.height / 2
+      const radius = Math.max(33, TRAY_RADIUS * (camera as THREE.OrthographicCamera).zoom + 6)
+      if (Math.hypot(dx, dy) <= radius) state.roll()
     })
     return () => setTapHandler(null)
   }, [get, setTapHandler])
-  useFrame(({ camera, size }) => {
+  useFrame(({ camera, scene, size }) => {
     const cam = camera as THREE.OrthographicCamera
     const aspect = size.width / Math.max(1, size.height)
     let angle = view.angle
@@ -151,10 +195,33 @@ function CameraRig({ view, setTapHandler }: Pick<ReturnType<typeof useBoardGestu
     const near = trayDistance(angle) + TRAY_RADIUS
     const midDepth = (near - edge) / 2
     let x = sin * midDepth, z = cos * midDepth
-    const pitch = view.elevation
+    const danceElapsed = Date.now() - danceStartedAt.current
+    const danceFocus = ease(danceElapsed, 0, 360) * (1 - ease(danceElapsed, DANCE_MS - 460, DANCE_MS))
+    const pitch = THREE.MathUtils.lerp(view.elevation, .48, danceFocus)
     let height = .85 + 19 * Math.tan(pitch)
-    let width = Math.max((2 * edge + .35) / view.zoom,
+    // Ease out the default crop as the camera drops toward the characters.
+    const zoom = view.zoom / THREE.MathUtils.lerp(DEFAULT_BOARD_ZOOM, 1, ease(pitch, .20, .70))
+    let width = Math.max((2 * edge + .35) / zoom,
       ((near + edge) * Math.sin(pitch) + 3.3 * Math.cos(pitch) + .45) * aspect)
+    if (danceFocus > 0 && dancePositions.length) {
+      const tour = Math.min(dancePositions.length - 1, (danceElapsed / (DANCE_MS - 500)) * (dancePositions.length - 1))
+      const index = Math.floor(tour)
+      const [fromX, fromZ] = dancePositions[index]
+      const [toX, toZ] = dancePositions[Math.min(index + 1, dancePositions.length - 1)]
+      const pan = ease(tour - index, .20, .78)
+      x += (THREE.MathUtils.lerp(fromX, toX, pan) - x) * danceFocus
+      z += (THREE.MathUtils.lerp(fromZ, toZ, pan) - z) * danceFocus
+      width += (Math.max(9.8, 6.5 * aspect) - width) * danceFocus
+    }
+    const elapsed = reaction ? Date.now() - reaction.startedAt : -1
+    if (reaction && !move?.captures.length && elapsed > 0 && elapsed < REACTION_DURATION) {
+      const follow = ease(elapsed, 0, 220) * (1 - ease(elapsed, 2050, REACTION_DURATION))
+      const path = reactionPath(reaction, elapsed, scene)
+      x += (path.x - x) * follow
+      z += (path.z - z) * follow
+      height += (9 - height) * follow
+      width += (Math.max(8.2, 5.2 * aspect) - width) * follow
+    }
     if (move?.captures.length) {
       const elapsed = Date.now() - move.startedAt
       const index = Math.max(0, Math.min(move.captures.length - 1,
@@ -177,8 +244,8 @@ function CameraRig({ view, setTapHandler }: Pick<ReturnType<typeof useBoardGestu
     }
     cam.position.set(x + 19 * Math.sin(angle), height, z + 19 * Math.cos(angle))
     cam.lookAt(x, .85, z)
-    const zoom = size.width / width
-    if (cam.zoom !== zoom) { cam.zoom = zoom; cam.updateProjectionMatrix() }
+    const cameraZoom = size.width / width
+    if (cam.zoom !== cameraZoom) { cam.zoom = cameraZoom; cam.updateProjectionMatrix() }
   })
   return null
 }
@@ -191,7 +258,9 @@ function MatchBoard() {
 // The web surface also suppresses the browser's native pan and pinch gestures.
 const gestureSurface = { ...StyleSheet.absoluteFill, touchAction: 'none' } as const
 
-export default function MatchScene() {
+export default memo(function MatchScene({ reaction, danceStartedAt }: {
+  reaction: Reaction | null; danceStartedAt: RefObject<number>
+}) {
   const gesture = useBoardGesture()
   return <View style={{ flex: 1 }} onLayout={e => { gesture.setWidth(e.nativeEvent.layout.width) }}>
     <Canvas pointerEvents="none" orthographic camera={{ position: [11, 21, 16], near: .1, far: 180 }}
@@ -199,14 +268,15 @@ export default function MatchScene() {
         scene.background = new THREE.Color('#182934')
         gl.toneMapping = THREE.ACESFilmicToneMapping
       }}>
-      <CameraRig view={gesture.view} setTapHandler={gesture.setTapHandler} />
+      <CameraRig view={gesture.view} setTapHandler={gesture.setTapHandler} reaction={reaction} danceStartedAt={danceStartedAt} />
       <hemisphereLight args={['#fff3e6', '#8292a5', 1.9]} />
       <directionalLight position={[-8, 16, 10]} intensity={2.4} color="#fff5e4" />
       <directionalLight position={[9, 7, -9]} intensity={1.5} color="#c5e3ff" />
       <MatchBoard />
       <DiceStage view={gesture.view} />
-      <SceneErrorSink label="characters"><Players /></SceneErrorSink>
+      <SceneErrorSink label="characters"><Players reaction={reaction} danceStartedAt={danceStartedAt} /></SceneErrorSink>
+      {reaction && <SceneErrorSink label="reaction"><FlyingReaction reaction={reaction} /></SceneErrorSink>}
     </Canvas>
     <View collapsable={false} style={gestureSurface} {...gesture.handlers} />
   </View>
-}
+})

@@ -3,7 +3,7 @@
     "name": "CGP - Cockroach Game Party",
     "slug": "cgp-cockroach-game-party",
     "scheme": "cgp",
-    "version": "1.0.3",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -11,6 +11,14 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a selfie for your Ludo character.",
+          "cameraPermission": false,
+          "microphonePermission": "Use your microphone when you unmute in a Ludo voice room."
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -27,7 +35,11 @@
             "extraProguardRules": "# Expo Modules constructs GLView by reflection when a match mounts.\n-keep class expo.modules.gl.GLView { public <init>(android.content.Context, expo.modules.kotlin.AppContext); }\n# EXGLContextPrepare looks up this callback by name through JNI.\n-keepclassmembers class expo.modules.gl.GLContext { public void flush(); }"
           }
         }
-      ]
+      ],
+      ["expo-audio", {
+        "recordAudioAndroid": false,
+        "enableBackgroundPlayback": false
+      }]
     ],
     "ios": {
       "supportsTablet": true,
@@ -44,7 +56,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"],
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
       "package": "com.kbamnote.cgp",
       "versionCode": 1
     },

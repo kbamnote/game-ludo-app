@@ -1,6 +1,6 @@
 import type { MoveAnimation } from '../game/store'
 import { cellFor, cellForProgress, YARD, type Token } from '../game/rules'
-import { RESCUE_MS, STEP_MS } from '../game/moveTiming'
+import { RESCUE_ARRIVAL_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
 import { toWorld } from './layout'
 
 export function ease(t: number, a: number, b: number) {
@@ -51,7 +51,7 @@ export function rescueSite(victim: Token) {
 // Coordinates are in the rescue site's frame. The van faces +Z, toward its own yard.
 export function rescuePose(t: number, distance: number) {
   const park = 2.18
-  const arrive = ease(t, .55, 1.85)
+  const arrive = ease(t, RESCUE_ARRIVAL_MS / 1000, 1.85)
   const depart = ease(t, 4.95, 6.12)
   const van = mix(mix(distance, park, arrive), distance, depart)
   const doors = ease(t, 1.55, 2.05) * (1 - ease(t, 4.57, 4.95))

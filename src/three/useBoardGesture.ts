@@ -8,9 +8,12 @@ export interface BoardView {
 }
 
 const TAP_SLOP = 10
+const MIN_ELEVATION = Math.PI / 24
+const MAX_ELEVATION = 1.36
+export const DEFAULT_BOARD_ZOOM = 1.10
 
 function createBoardGesture() {
-  const view: BoardView = { angle: Math.PI / 5, elevation: 1.14, zoom: 1.10 }
+  const view: BoardView = { angle: Math.PI / 5, elevation: 1.14, zoom: DEFAULT_BOARD_ZOOM }
   let onTap: ((x: number, y: number) => void) | null = null
   let width = 390
 
@@ -31,7 +34,7 @@ function createBoardGesture() {
     } else if (!b && (dragged || Math.hypot(a.pageX - startX, a.pageY - startY) > TAP_SLOP)) {
       dragged = true
       view.angle -= (a.pageX - lastX) * Math.PI / width
-      view.elevation = Math.max(.70, Math.min(1.36,
+      view.elevation = Math.max(MIN_ELEVATION, Math.min(MAX_ELEVATION,
         view.elevation + (a.pageY - lastY) * 1.8 / width))
     } else {
       return

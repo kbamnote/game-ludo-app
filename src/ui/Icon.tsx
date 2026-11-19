@@ -13,6 +13,7 @@ const COMMUNITY: Record<string, MCI> = {
   swords: 'sword-cross',
   casino: 'dice-5',
   toys: 'ferris-wheel',
+  'dance-ballroom': 'dance-ballroom',
   'sports-esports': 'gamepad-variant',
 }
 
