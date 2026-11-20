@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export interface Profile {
+  accountId: string | null
   name: string
   level: number
   xp: number
@@ -53,6 +54,7 @@ export const MILESTONES = [{ goal: 3, gems: 10 }, { goal: 8, gems: 25 }, { goal:
 export const useProfile = create<Profile>()(
   persist(
     (set, get) => ({
+      accountId: null,
       name: 'Alex',
       level: 42,
       xp: 7340,

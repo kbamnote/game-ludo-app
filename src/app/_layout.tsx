@@ -19,10 +19,13 @@ import { Rubik_600SemiBold, Rubik_800ExtraBold, Rubik_900Black } from '@expo-goo
 import { LuckiestGuy_400Regular } from '@expo-google-fonts/luckiest-guy'
 import { Baloo2_700Bold, Baloo2_800ExtraBold } from '@expo-google-fonts/baloo-2'
 import { C } from '../theme'
+import { restoreAccount, useAccount } from '../net/account'
 
 SplashScreenModule.preventAutoHideAsync().catch(() => {})
 
 export default function RootLayout() {
+  const canPlay = useAccount(s => s.ready && s.session?.account.avatar != null)
+  useEffect(() => { void restoreAccount() }, [])
   const [loaded, error] = useFonts({
     Outfit_600SemiBold,
     Outfit_700Bold,
@@ -69,7 +72,29 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: C.canvas },
           animation: 'fade',
         }}
-      />
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Protected guard={canPlay}>
+          <Stack.Screen name="home" />
+          <Stack.Screen name="character" />
+          <Stack.Screen name="computer" />
+          <Stack.Screen name="events" />
+          <Stack.Screen name="friends" />
+          <Stack.Screen name="help" />
+          <Stack.Screen name="inbox" />
+          <Stack.Screen name="inventory" />
+          <Stack.Screen name="lucky7" />
+          <Stack.Screen name="match" />
+          <Stack.Screen name="modes" />
+          <Stack.Screen name="online" />
+          <Stack.Screen name="pass-play" />
+          <Stack.Screen name="profile" />
+          <Stack.Screen name="spin" />
+          <Stack.Screen name="tournament" />
+          <Stack.Screen name="voice" />
+        </Stack.Protected>
+      </Stack>
     </SafeAreaProvider>
   )
 }

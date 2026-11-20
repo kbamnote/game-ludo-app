@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Character } from './character'
-import { presentationMs } from './moveTiming'
+import { CORONATION_MS, type Coronation } from './coronation'
+import { LOCAL_DICE_ROLL_MS, ONLINE_DICE_ROLL_MS, presentationMs } from './moveTiming'
 import { chooseMove, type Difficulty } from './ai'
 import {
   applyMove,
@@ -86,6 +87,7 @@ export interface MatchState {
   current: Seat
   die: number | null
   passedRoll: { seat: Seat; die: number; reason: 'no-move' | 'three-sixes' } | null
+  lastServerRoll: { die: number; endsAt: number } | null
   phase: Phase
   moves: Move[]
   animation: MoveAnimation | null
@@ -93,6 +95,7 @@ export interface MatchState {
   /** Seats in finishing order. */
   ranking: Seat[]
   log: LogEntry[]
+  coronation: Coronation | null
   turnCount: number
   startedAt: number
 
@@ -104,6 +107,7 @@ export interface MatchState {
     roll: () => void
     move: (tokenId: string) => void
   }) => void
+  applyServerRoll: (die: number) => void
   applyServerState: (s: {
     tokens: Token[]
     current: Seat
@@ -157,6 +161,34 @@ function nameOf(players: PlayerConfig[], seat: Seat) {
 
 export const useMatch = create<MatchState>((set, get) => {
   const queued: MoveAnimation[] = []
+  let ceremonyTimer: ReturnType<typeof setTimeout> | undefined
+  function clearCoronation() {
+    clearTimeout(ceremonyTimer)
+  }
+
+  function celebrate(ranking: Seat[], previous: Seat[], animation: MoveAnimation) {
+    const limit = get().variant === 'teams' ? 1 : 2
+    const awards = ranking.slice(0, limit).filter(seat => !previous.includes(seat))
+    if (!awards.length) return
+    clearCoronation()
+    function begin(index: number) {
+      const seat = awards[index]
+      const token = get().tokens.find(item => item.id === animation.tokenId && item.seat === seat)
+        ?? get().tokens.find(item => item.seat === seat)
+      if (!token) { set({ coronation: null }); maybeBot(); return }
+      const place = seat === ranking[0] ? 1 : 2
+      set({ coronation: { seat, place, tokenId: token.id, startedAt: Date.now() } })
+      ceremonyTimer = setTimeout(() => {
+        if (index + 1 < awards.length) begin(index + 1)
+        else {
+          set({ coronation: null })
+          maybeBot()
+        }
+      }, CORONATION_MS)
+    }
+    begin(0)
+  }
+
   const present = (animation: MoveAnimation) => {
     animation.startedAt = Date.now()
     set({ phase: 'moving', animation })
@@ -170,9 +202,9 @@ export const useMatch = create<MatchState>((set, get) => {
 
   /** Bots roll by themselves a beat after their turn opens. */
   const maybeBot = () => {
-    const { players, current, phase } = get()
+    const { players, current, phase, coronation } = get()
     const player = players.find((p) => p.seat === current)
-    if (player?.kind === 'bot' && phase === 'await-roll') {
+    if (!coronation && player?.kind === 'bot' && phase === 'await-roll') {
       later(() => get().roll(), 700)
     }
   }
@@ -217,18 +249,21 @@ export const useMatch = create<MatchState>((set, get) => {
     tokens: [],
     current: 0,
     die: null,
+    lastServerRoll: null,
     passedRoll: null,
     phase: 'await-roll',
     moves: [],
     animation: null,
     consecutiveSixes: 0,
     ranking: [],
+    coronation: null,
     log: [],
     turnCount: 0,
     startedAt: 0,
 
     start: (players, variant = 'classic') => {
       clearTimer()
+      clearCoronation()
       queued.length = 0
       const seats = players.map((p) => p.seat)
       set({
@@ -249,6 +284,7 @@ export const useMatch = create<MatchState>((set, get) => {
         animation: null,
         consecutiveSixes: 0,
         ranking: [],
+        coronation: null,
         log: [{ id: ++logId, seat: seats[0], text: `${nameOf(players, seats[0])} opens the match` }],
         turnCount: 0,
         startedAt: Date.now(),
@@ -258,7 +294,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
     roll: () => {
       const { phase, mode, mySeat, current, netRoll } = get()
-      if (phase !== 'await-roll') return
+      if (phase !== 'await-roll' || get().coronation) return
 
       if (mode === 'online') {
         // The server owns the dice; it will broadcast the result.
@@ -268,7 +304,7 @@ export const useMatch = create<MatchState>((set, get) => {
       }
 
       set({ phase: 'rolling', die: rollDie(), passedRoll: null })
-      later(() => get().settleRoll(), 900)
+      later(() => get().settleRoll(), LOCAL_DICE_ROLL_MS)
     },
 
     settleRoll: () => {
@@ -316,7 +352,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
     pickToken: (tokenId) => {
       const { phase, moves, tokens, mode, mySeat, current, netMove } = get()
-      if (phase !== 'await-move') return
+      if (phase !== 'await-move' || get().coronation) return
 
       if (mode === 'online') {
         if (mySeat !== current) return
@@ -353,6 +389,7 @@ export const useMatch = create<MatchState>((set, get) => {
           return
         }
         const pending = state.pendingServer
+        if (pending) celebrate(pending.ranking, state.ranking, animation)
         set({
           animation: null,
           pendingServer: null,
@@ -392,11 +429,13 @@ export const useMatch = create<MatchState>((set, get) => {
       const ranking = [...state.ranking]
       const partner = ((current + 2) % 4) as Seat
       if (state.variant === 'quick' && move.finishes) {
+        celebrate([current], state.ranking, animation)
         set({ ranking: [current], phase: 'ended' })
         clearTimer()
         return
       }
       if (state.variant === 'teams' && hasWon(next, current) && hasWon(next, partner)) {
+        celebrate([current, partner], state.ranking, animation)
         set({ ranking: [current, partner], phase: 'ended' })
         clearTimer()
         return
@@ -410,11 +449,13 @@ export const useMatch = create<MatchState>((set, get) => {
       const remaining = seats.filter((s) => !ranking.includes(s))
       if (remaining.length <= 1) {
         for (const s of remaining) if (!ranking.includes(s)) ranking.push(s)
+        celebrate(ranking, state.ranking, animation)
         set({ ranking, phase: 'ended' })
         clearTimer()
         return
       }
 
+      if (state.variant !== 'teams') celebrate(ranking, state.ranking, animation)
       if (grantsExtraTurn(die, move) && !ranking.includes(current)) {
         set({ phase: 'await-roll' })
         maybeBot()
@@ -426,6 +467,7 @@ export const useMatch = create<MatchState>((set, get) => {
 
     attachServer: ({ players, mySeat, roll, move }) => {
       clearTimer()
+      clearCoronation()
       queued.length = 0
       set({
         mode: 'online',
@@ -439,15 +481,22 @@ export const useMatch = create<MatchState>((set, get) => {
         tokens: createTokens(players.map((p) => p.seat)),
         current: players[0]?.seat ?? 0,
         die: null,
+        lastServerRoll: null,
         passedRoll: null,
         phase: 'await-roll',
         moves: [],
         animation: null,
         ranking: [],
+        coronation: null,
         log: [],
         turnCount: 0,
         startedAt: Date.now(),
       })
+    },
+
+    applyServerRoll: (die) => {
+      if (get().mode !== 'online') return
+      set({ lastServerRoll: { die, endsAt: Date.now() + ONLINE_DICE_ROLL_MS } })
     },
 
     /** Replace local state wholesale with the server's view. */
@@ -464,6 +513,7 @@ export const useMatch = create<MatchState>((set, get) => {
         }
       }
       set({
+        ...(resync ? { lastServerRoll: null } : {}),
         animation: null, pendingServer: null,
         tokens: snap.tokens,
         current: snap.current,
@@ -499,12 +549,14 @@ export const useMatch = create<MatchState>((set, get) => {
 
     detachServer: () => {
       clearTimer()
+      clearCoronation()
       queued.length = 0
-      set({ mode: 'local', mySeat: null, netRoll: null, netMove: null, pendingServer: null, animation: null })
+      set({ mode: 'local', mySeat: null, netRoll: null, netMove: null, pendingServer: null, animation: null, lastServerRoll: null, coronation: null })
     },
 
     reset: () => {
       clearTimer()
+      clearCoronation()
       queued.length = 0
       set({
         tokens: [],
@@ -513,10 +565,12 @@ export const useMatch = create<MatchState>((set, get) => {
         seats: [],
         phase: 'await-roll',
         die: null,
+        lastServerRoll: null,
         passedRoll: null,
         moves: [],
         animation: null,
         ranking: [],
+        coronation: null,
         log: [],
       })
     },

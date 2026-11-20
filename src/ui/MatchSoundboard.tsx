@@ -5,8 +5,8 @@ import { DANCE_SONG, SOUND_CLIPS, soundAsset } from '../game/soundboard'
 import Icon from './Icon'
 import { s } from './ArcadePage'
 
-export function MatchSoundPlayback({ clip, muted, onDance, onPlayingChange }: {
-  clip: number; muted: boolean; onDance: () => void; onPlayingChange: (playing: boolean) => void
+export function MatchSoundPlayback({ clip, endsAt, muted, onDance, onPlayingChange }: {
+  clip: number; endsAt?: number; muted: boolean; onDance: () => void; onPlayingChange: (playing: boolean) => void
 }) {
   const player = useAudioPlayer(soundAsset(clip), {
     downloadFirst: true, updateInterval: 80,
@@ -20,10 +20,20 @@ export function MatchSoundPlayback({ clip, muted, onDance, onPlayingChange }: {
     player.muted = muted
   }, [player, muted])
   useEffect(() => {
-    if (!status.isLoaded || requested.current) return
-    requested.current = true
-    player.play()
-  }, [player, status.isLoaded])
+    if (!status.isLoaded) return
+    const remaining = endsAt === undefined ? undefined : endsAt - Date.now()
+    if (remaining !== undefined && remaining <= 0) {
+      if (requested.current) player.pause()
+      return
+    }
+    if (!requested.current) {
+      requested.current = true
+      player.play()
+    }
+    if (remaining === undefined) return
+    const timer = setTimeout(() => player.pause(), remaining)
+    return () => clearTimeout(timer)
+  }, [endsAt, player, status.isLoaded])
   useEffect(() => {
     onPlayingChange(status.playing)
     return () => onPlayingChange(false)

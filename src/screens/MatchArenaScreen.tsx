@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import * as Speech from 'expo-speech'
 import { Asset } from 'expo-asset'
-import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
 import MatchScene from '../three/MatchScene'
@@ -10,6 +10,7 @@ import SceneBoundary from '../three/SceneBoundary'
 import MatchVoice from '../voice/MatchVoice'
 import Icon from '../ui/Icon'
 import Glow from '../ui/Glow'
+import MatchDice from '../ui/MatchDice'
 import { C, F, R, TA } from '../theme'
 import { useMatch, type LocalVariant, type PlayerConfig } from '../game/store'
 import { useMatchAudio } from '../game/useMatchAudio'
@@ -18,11 +19,12 @@ import { BOMB_SCORCH_END, REACTIONS, REACTION_DURATION, REACTION_LAUNCH_DELAY, r
 import ReactionPicker from '../ui/ReactionPicker'
 import MatchSoundboard, { MatchSoundPlayback } from '../ui/MatchSoundboard'
 import { AMBULANCE_SOUND, DANCE_SONG, soundAsset } from '../game/soundboard'
-import { RESCUE_ARRIVAL_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
+import { RESCUE_ARRIVAL_MS, RESCUE_HOME_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
 import { useProfile } from '../game/profile'
 import { SEAT_HEX, seatScore, tokensHome, type Seat } from '../game/rules'
 
 const TURN_SECONDS = 15
+const ARENA_BACKDROP = require('../../assets/arena-backdrop.jpg')
 
 const AVATARS: Record<Seat, string> = {
   0: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC3NCICq93MugUGdRqVsBA9-uDth032_lpFBlGjst6H_eeILRShaGTZivExZV5sLWg4G2FMvEJ6ytjNbG-LJvpXD66BbFKcUycYX987zrAFGd1kao7fiwyIf7fjMq8YaCrxKNamPkf0BlXD76k32zoqVC4Wal-auhPS3BGijcBJ-cevMvy9lZAn14fMMlLc9xuzvcbPbiWKWZNagazGm5qv0trgb1IswuYlnoUFFjE',
@@ -64,13 +66,14 @@ function PlayerChip({
 
   const home = tokensHome(tokens, seat)
   const out = tokens.filter((t) => t.seat === seat && t.progress >= 0).length
+  const score = seatScore(tokens, seat)
   const status = active
     ? secondsLeft < 0 ? 'YOUR TURN' : `TURN: ${secondsLeft}S`
     : home > 0
-      ? `TOKENS: ${home} HOME`
+      ? `${home} HOME`
       : out > 0
-        ? `TOKENS: ${out} OUT`
-        : 'WAITING...'
+        ? `${out} OUT`
+        : 'WAITING'
 
   const ring = 2 * Math.PI * 21
   const badge = SEAT_BADGE[seat]
@@ -79,7 +82,7 @@ function PlayerChip({
     <View style={styles.avatarSlot}>
       {active ? (
         <>
-          <Svg width={42} height={42} viewBox="0 0 56 56" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+          <Svg width={36} height={36} viewBox="0 0 56 56" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
             <Circle cx={28} cy={28} r={21} stroke={C.arenaContainer} strokeWidth={4} fill="transparent" />
             <Circle
               cx={28}
@@ -105,16 +108,18 @@ function PlayerChip({
   )
 
   return (
-    <Pressable style={styles.playerChip} onPress={onReaction} disabled={!onReaction}
+    <Pressable style={[styles.playerChip, active && { borderColor: SEAT_HEX[seat] }]} onPress={onReaction} disabled={!onReaction}
       accessibilityRole={onReaction ? 'button' : undefined}
       accessibilityLabel={onReaction ? 'Send reaction to ' + player.name : undefined}>
       {avatar}
       <View style={styles.playerDetails}>
         <Text numberOfLines={1} style={styles.playerName}>{player.name}</Text>
-        <Text style={[styles.playerStatus, { color: active ? SEAT_HEX[seat] : C.arenaOnSurfaceVariant }]}>{status}</Text>
+        <View style={styles.playerMeta}>
+          <Text numberOfLines={1} style={[styles.playerStatus, { color: active ? SEAT_HEX[seat] : C.arenaOnSurfaceVariant }]}>{status}</Text>
+          <Text accessibilityLabel={`${score} points`} style={styles.standingScore}>{score}</Text>
+          {onReaction && <Icon name="add-reaction" size={12} color={C.arenaSecondaryFixed} />}
+        </View>
       </View>
-      <Text accessibilityLabel={`${seatScore(tokens, seat)} points`} style={styles.standingScore}>{seatScore(tokens, seat)}</Text>
-      {onReaction && <Icon name="add-reaction" size={17} color={C.arenaSecondaryFixed} />}
     </Pressable>
   )
 }
@@ -128,9 +133,11 @@ export default function MatchArenaScreen() {
   const phase = useMatch((s) => s.phase)
   const current = useMatch((s) => s.current)
   const die = useMatch((s) => s.die)
+  const lastServerRoll = useMatch(s => s.mode === 'online' ? s.lastServerRoll : null)
   const passedRoll = useMatch(s => s.passedRoll)
   const moves = useMatch((s) => s.moves)
   const ranking = useMatch((s) => s.ranking)
+  const coronation = useMatch(s => s.coronation)
   const rescue = useMatch(s => s.animation?.captures.length ? s.animation : null)
   const capturing = rescue !== null
   const pickToken = useMatch((s) => s.pickToken)
@@ -151,7 +158,6 @@ export default function MatchArenaScreen() {
     setAddedSoundPlaying(playing)
     if (playing) void Speech.stop().catch(() => {})
   }, [])
-  useMatchAudio(soundMuted || addedSoundPlaying)
   useEffect(() => {
     void Asset.loadAsync([soundAsset(AMBULANCE_SOUND), soundAsset(DANCE_SONG)]).catch(() => {})
   }, [])
@@ -161,18 +167,19 @@ export default function MatchArenaScreen() {
   const matchEnded = phase === 'ended'
   const canChat = mode === 'online' && Boolean(friendsRoom) && !matchEnded
   useEffect(() => {
-    if (!sharedTable || !voiceEnabled || !turnName || matchEnded || addedSoundRef.current) return
+    if (!sharedTable || !voiceEnabled || !turnName || matchEnded || coronation || addedSoundRef.current) return
     Speech.speak(`${turnName}, your turn.`, { rate: .94 })
     return () => { void Speech.stop().catch(() => {}) }
-  }, [sharedTable, voiceEnabled, turnName, current, matchEnded])
+  }, [sharedTable, voiceEnabled, turnName, current, matchEnded, coronation])
   const [secondsLeft, setSecondsLeft] = useState(TURN_SECONDS)
   const [recipient, setRecipient] = useState<Seat | null>(null)
   const [soundsOpen, setSoundsOpen] = useState(false)
   const [effectNotice, setEffectNotice] = useState('')
-  const [sound, setSound] = useState<{ clip: number; receivedAt: number; matchId: number } | null>(null)
+  const [sound, setSound] = useState<{ clip: number; receivedAt: number; matchId: number; endsAt?: number } | null>(null)
   const danceStartedAt = useRef(0)
   const startDance = useCallback(() => { danceStartedAt.current = Date.now() }, [])
   const [reaction, setReaction] = useState<Reaction | null>(null)
+  useMatchAudio(soundMuted || addedSoundPlaying, reaction, coronation)
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const senderSeat = mode === 'online' ? mySeat : sharedTable ? current : players.find(player => player.kind === 'human')?.seat
   const target = players.find(player => player.seat === recipient)
@@ -208,7 +215,7 @@ export default function MatchArenaScreen() {
   useEffect(() => {
     secondsRef.current = TURN_SECONDS
     setSecondsLeft(TURN_SECONDS)
-    if (phase === 'ended' || sharedTable) return
+    if (phase === 'ended' || sharedTable || coronation) return
 
     const id = setInterval(() => {
       secondsRef.current -= 1
@@ -225,11 +232,11 @@ export default function MatchArenaScreen() {
     }, 1000)
 
     return () => clearInterval(id)
-  }, [current, phase, isHumanTurn, moves, pickToken, roll, mode, sharedTable])
+  }, [current, phase, isHumanTurn, moves, pickToken, roll, mode, sharedTable, coronation])
 
   const showReaction = useCallback((event: ReactionRequest) => {
     const match = useMatch.getState()
-    if (match.phase === 'ended') return
+    if (match.phase === 'ended' || match.coronation) return
     const tokens = match.animation?.before ?? match.tokens
     const sender = reactionAnchor(tokens, event.from), receiver = reactionAnchor(tokens, event.to)
     if (!sender || !receiver || sender.id === receiver.id) return
@@ -242,22 +249,39 @@ export default function MatchArenaScreen() {
     const off = onMatchReaction(showReaction)
     return () => { off(); clearTimeout(reactionTimer.current ?? undefined); setReaction(null); setRecipient(null) }
   }, [showReaction, setReaction, setRecipient]))
-  const playSound = useCallback((clip: number) => {
+  const playSound = useCallback((clip: number, endsAt?: number) => {
     const match = useMatch.getState()
-    if (match.phase === 'ended') return
+    if (match.phase === 'ended' || match.coronation) return
     if (clip !== DANCE_SONG) danceStartedAt.current = 0
-    setSound({ clip, receivedAt: Date.now(), matchId: match.startedAt })
+    setSound({ clip, receivedAt: Date.now(), matchId: match.startedAt, endsAt })
   }, [])
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!rescue) return
-    const timers = rescue.captures.map((_, index) => setTimeout(() => {
-      if (useMatch.getState().animation === rescue && !addedSoundRef.current) playSound(AMBULANCE_SOUND)
-    }, Math.max(0, rescue.startedAt + rescue.path.length * STEP_MS + index * RESCUE_MS + RESCUE_ARRIVAL_MS - Date.now())))
-    return () => timers.forEach(clearTimeout)
-  }, [rescue, playSound])
+    const walkEnd = rescue.startedAt + rescue.path.length * STEP_MS
+    const timers = rescue.captures.map((_, index) => {
+      const rescueStart = walkEnd + index * RESCUE_MS
+      const endsAt = rescueStart + RESCUE_HOME_MS
+      return setTimeout(() => {
+        if (Date.now() < endsAt && useMatch.getState().animation === rescue && !addedSoundRef.current) {
+          playSound(AMBULANCE_SOUND, endsAt)
+        }
+      }, Math.max(0, rescueStart + RESCUE_ARRIVAL_MS - Date.now()))
+    })
+    return () => {
+      timers.forEach(clearTimeout)
+      setSound(sound => sound?.clip === AMBULANCE_SOUND ? null : sound)
+    }
+  }, [rescue, playSound]))
   useFocusEffect(useCallback(() => {
     const off = onMatchSound(playSound)
-    return () => { off(); setSound(null); setSoundsOpen(false); danceStartedAt.current = 0 }
+    const offCoronation = useMatch.subscribe((state, previous) => {
+      if (state.coronation && !previous.coronation) {
+        setSound(null)
+        setSoundsOpen(false)
+        danceStartedAt.current = 0
+      }
+    })
+    return () => { off(); offCoronation(); setSound(null); setSoundsOpen(false); danceStartedAt.current = 0 }
   }, [playSound, setSound, setSoundsOpen]))
 
   function sendReaction(kind: ReactionKind) {
@@ -283,7 +307,9 @@ export default function MatchArenaScreen() {
   }
 
   const callout =
-    phase === 'ended'
+    coronation
+      ? `${players.find(p => p.seat === coronation.seat)?.name ?? 'Player'} · ${coronation.place === 1 ? '1ST PLACE' : '2ND PLACE'}`
+      : phase === 'ended'
       ? 'MATCH COMPLETE'
       : phase === 'moving'
         ? capturing ? 'CAPTURE!' : 'MOVING...'
@@ -307,12 +333,17 @@ export default function MatchArenaScreen() {
         ? 'Tap the dice to roll'
         : 'Waiting for the table'
 
-  const showRoll = phase === 'await-roll' && isHumanTurn
-  const canAutoMove = phase === 'await-move' && isHumanTurn && moves.length > 0
+  const showRoll = !coronation && phase === 'await-roll' && isHumanTurn
+  const canAutoMove = !coronation && phase === 'await-move' && isHumanTurn && moves.length > 0
   const pastRoller = passedRoll && players.find(player => player.seat === passedRoll.seat)
   const passHint = passedRoll && pastRoller && (passedRoll.reason === 'three-sixes'
     ? `${pastRoller.name} rolled three sixes and passed`
     : `${pastRoller.name} rolled ${passedRoll.die} · no legal move`)
+  const playerChips = players.map(p => (
+    <PlayerChip key={p.seat} seat={p.seat} active={current === p.seat && !matchEnded}
+      secondsLeft={sharedTable ? -1 : secondsLeft}
+      onReaction={!coronation && senderSeat != null && p.seat !== senderSeat && !matchEnded ? () => setRecipient(p.seat) : undefined} />
+  ))
 
   return (
     <View style={styles.root}>
@@ -353,11 +384,11 @@ export default function MatchArenaScreen() {
             </View>
 
             <View style={styles.topGroup}>
-              {phase !== 'ended' && <Pressable style={styles.squareButton} accessibilityRole="button"
+              {phase !== 'ended' && !coronation && <Pressable style={styles.squareButton} accessibilityRole="button"
                 accessibilityLabel="Open match sounds" onPress={() => setSoundsOpen(true)}>
                 <Icon name="music-note" size={20} color={C.arenaSecondaryFixed} />
               </Pressable>}
-              {phase !== 'ended' && <Pressable style={[styles.squareButton, dancePlaying && { opacity: .55 }]}
+              {phase !== 'ended' && !coronation && <Pressable style={[styles.squareButton, dancePlaying && { opacity: .55 }]}
                 accessibilityRole="button" accessibilityLabel="Play dance song"
                 accessibilityState={{ disabled: dancePlaying }} disabled={dancePlaying}
                 onPress={() => requestSound(DANCE_SONG)}>
@@ -373,6 +404,8 @@ export default function MatchArenaScreen() {
 
           {canChat && voiceOpen && <MatchVoice key={friendsRoom} />}
           <View style={styles.stage}>
+            <Image source={ARENA_BACKDROP} accessible={false} pointerEvents="none"
+              resizeMode="cover" fadeDuration={0} style={styles.stageBackdrop} />
             <SceneBoundary>
               <MatchScene reaction={reaction} danceStartedAt={danceStartedAt} />
             </SceneBoundary>
@@ -385,7 +418,7 @@ export default function MatchArenaScreen() {
               </Text>
             </View>}
 
-            {phase === 'ended' && (
+            {phase === 'ended' && !coronation && (
               <View style={styles.endOverlay}>
                 <Icon name="emoji-events" size={48} color={C.arenaSecondaryContainer} />
                 <Text style={styles.endTitle}>
@@ -418,40 +451,39 @@ export default function MatchArenaScreen() {
             )}
           </View>
 
-          <ScrollView style={styles.footer} contentContainerStyle={styles.footerContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.prompt}>
-            <View style={styles.promptLeft}>
-              <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[current], width: 12, height: 12 }]} />
-              <View style={styles.promptCopy}>
-                <Text style={styles.calloutText}>{callout}</Text>
-                {(sharedTable || capturing || canAutoMove) && <Text
-                  numberOfLines={sharedTable ? 1 : undefined} style={styles.promptText}>{showRoll && passHint ? passHint : hint}</Text>}
+          <View style={styles.footer}>
+            <View style={styles.prompt}>
+              <View style={styles.promptLeft}>
+                <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[current], width: 12, height: 12 }]} />
+                <View style={styles.promptCopy}>
+                  <Text style={styles.calloutText}>{callout}</Text>
+                  {!coronation && (sharedTable || capturing || canAutoMove) && <Text
+                    numberOfLines={sharedTable ? 1 : undefined} style={styles.promptText}>{showRoll && passHint ? passHint : hint}</Text>}
+                </View>
               </View>
+              {canAutoMove && <Pressable
+                accessibilityRole="button"
+                style={styles.autoButton}
+                onPress={() => pickToken(moves[0].tokenId)}
+              >
+                <Text style={styles.autoText}>AUTO MOVE</Text>
+              </Pressable>}
             </View>
-            <Pressable
-              accessibilityRole="button"
-              style={[styles.autoButton, sharedTable && styles.sharedRollButton, !showRoll && !canAutoMove && { opacity: 0.4 }]}
-              disabled={!showRoll && !canAutoMove}
-              onPress={showRoll ? roll : () => moves.length && pickToken(moves[0].tokenId)}
-            >
-              <Text style={styles.autoText}>{canAutoMove || !sharedTable && !showRoll
-                ? 'AUTO MOVE' : phase === 'rolling' ? 'ROLLING…' : 'ROLL DICE'}</Text>
-            </Pressable>
-          </View>
 
-          <View style={styles.seatRow}>
-            {players.map((p) => (
-              <PlayerChip key={p.seat} seat={p.seat} active={current === p.seat && phase !== 'ended'} secondsLeft={sharedTable ? -1 : secondsLeft}
-                onReaction={senderSeat != null && p.seat !== senderSeat && phase !== 'ended' ? () => setRecipient(p.seat) : undefined} />
-            ))}
+            <View style={styles.turnDock}>
+              <View style={styles.dockSide}>{playerChips.filter((_, index) => index % 2 === 0)}</View>
+              <MatchDice seat={current} value={lastServerRoll?.die ?? die ?? 6} rolling={phase === 'rolling'}
+                rollUntil={lastServerRoll?.endsAt} canRoll={showRoll} onRoll={roll} />
+              <View style={styles.dockSide}>{playerChips.filter((_, index) => index % 2 === 1)}</View>
+            </View>
           </View>
-        </ScrollView>
-        {target && phase !== 'ended' && <ReactionPicker key={target.seat} target={target.name}
+        {target && phase !== 'ended' && !coronation && <ReactionPicker key={target.seat} target={target.name}
           close={() => setRecipient(null)} send={sendReaction} />}
-        {soundsOpen && phase !== 'ended' && <MatchSoundboard close={() => setSoundsOpen(false)}
+        {soundsOpen && phase !== 'ended' && !coronation && <MatchSoundboard close={() => setSoundsOpen(false)}
           play={requestSound} />}
-        {sound && sound.matchId === startedAt && phase !== 'ended' && <MatchSoundPlayback
-          key={sound.receivedAt} clip={sound.clip} muted={soundMuted} onDance={startDance} onPlayingChange={onSoundPlayingChange} />}
+        {sound && sound.matchId === startedAt && phase !== 'ended' && !coronation && <MatchSoundPlayback
+          key={sound.receivedAt} clip={sound.clip} endsAt={sound.endsAt} muted={soundMuted}
+          onDance={startDance} onPlayingChange={onSoundPlayingChange} />}
       </SafeAreaView>
     </View>
   )
@@ -462,8 +494,7 @@ const FILL = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } as c
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.arenaSurface },
-  footer: { flexGrow: 0, flexShrink: 1, maxHeight: '45%' },
-  footerContent: { paddingVertical: 6, gap: 5 },
+  footer: { paddingHorizontal: 8, paddingTop: 5, paddingBottom: 8, gap: 5 },
 
   topBar: {
     paddingHorizontal: 12,
@@ -504,17 +535,22 @@ const styles = StyleSheet.create({
   potLabel: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaSecondaryFixed },
   potValue: { fontFamily: F.arena, ...TA.headlineMd, color: C.arenaSecondary },
 
-  seatRow: { paddingHorizontal: 8, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 5 },
-  playerChip: { width: '49%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, gap: 5, backgroundColor: C.arenaLow, borderRadius: 12 },
+  turnDock: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dockSide: { flex: 1, minWidth: 0, gap: 4 },
+  playerChip: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2,
+    gap: 4, backgroundColor: C.arenaLow, borderRadius: 12, borderWidth: 1, borderColor: C.arenaHigh,
+  },
   playerDetails: { flex: 1, minWidth: 0 },
-  avatarSlot: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 34, height: 34, borderRadius: R.full, backgroundColor: C.arenaHighest },
-  avatarActive: { width: 28, height: 28, borderRadius: R.full, backgroundColor: C.arenaHighest },
+  playerMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  avatarSlot: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 30, height: 30, borderRadius: R.full, backgroundColor: C.arenaHighest },
+  avatarActive: { width: 24, height: 24, borderRadius: R.full, backgroundColor: C.arenaHighest },
   seatBadge: { position: 'absolute', bottom: 0, right: 0, paddingHorizontal: 4, borderRadius: R.full },
   seatBadgeText: { fontFamily: F.arena, ...TA.labelSm },
   seatDot: { width: 8, height: 8, borderRadius: R.full },
   playerName: { fontFamily: F.arena, ...TA.headlineMd, color: C.arenaOnSurface },
-  playerStatus: { fontFamily: F.arena, ...TA.labelSm },
+  playerStatus: { fontFamily: F.arena, ...TA.labelSm, flex: 1, minWidth: 0 },
 
   stage: {
     width: '100%',
@@ -522,6 +558,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: C.arenaLow,
   },
+  stageBackdrop: { ...FILL, width: '100%', height: '100%' },
   reactionCaption: { alignSelf: 'center', maxWidth: '92%', position: 'absolute', top: 8, paddingHorizontal: 12,
     paddingVertical: 6, borderRadius: 16, backgroundColor: C.arenaContainer },
   reactionCaptionText: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaSecondaryFixed },
@@ -548,8 +585,8 @@ const styles = StyleSheet.create({
   rematchText: { fontFamily: F.arena, ...TA.labelLg, color: C.arenaOnPrimaryContainer },
 
   prompt: {
-    marginHorizontal: 8,
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 16,
     backgroundColor: C.arenaHigh,
     flexDirection: 'row',
@@ -560,9 +597,8 @@ const styles = StyleSheet.create({
   promptLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   promptCopy: { flexShrink: 1 },
   promptText: { fontFamily: F.arenaBody, ...TA.bodySm, color: C.arenaOnSurface, flexShrink: 1 },
-  autoButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: C.arenaTertiaryContainer },
-  sharedRollButton: { minHeight: 48, minWidth: 104, alignItems: 'center', justifyContent: 'center' },
+  autoButton: { paddingHorizontal: 10, minHeight: 40, justifyContent: 'center', borderRadius: 12, backgroundColor: C.arenaTertiaryContainer },
   autoText: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaOnTertiaryContainer },
 
-  standingScore: { fontFamily: F.arena, ...TA.labelMd, color: C.arenaOnSurface, marginLeft: 'auto' },
+  standingScore: { fontFamily: F.arena, ...TA.labelSm, color: C.arenaOnSurface },
 })

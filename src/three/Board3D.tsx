@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { RoundedBox } from '@react-three/drei/native'
+import { useFrame } from '@react-three/fiber/native'
 import * as THREE from 'three'
-import { SEAT_HEX, type Seat } from '../game/rules'
+import { HOME_TRIANGLE_DIRECTIONS, SEAT_HEX, type Seat } from '../game/rules'
+import { useMatch } from '../game/store'
 import { buildTiles, CELL, TILE_H, TILE_Y, toWorld, YARD_PLATES, YARD_SIZE } from './layout'
 
 const CHASSIS = '#1e2640'
@@ -10,6 +12,20 @@ const DECK = '#121826'
 const TILE = '#e8ecf8'
 
 const SEATS: Seat[] = [0, 1, 2, 3]
+
+export function useYardGlow(yards: Partial<Record<Seat, THREE.MeshStandardMaterial>>) {
+  const targets = useRef(yards)
+  useLayoutEffect(() => { targets.current = yards }, [yards])
+  useFrame(({ clock }) => {
+    const { current, phase, seats } = useMatch.getState()
+    const active = phase === 'ended' || !seats.includes(current) ? null : current
+    const intensity = .29 + .15 * Math.sin(clock.elapsedTime * Math.PI * 1.15)
+    for (const seat of SEATS) {
+      const yard = targets.current[seat]
+      if (yard) yard.emissiveIntensity = seat === active ? intensity : 0
+    }
+  })
+}
 
 function plastic(color: string, opts: Partial<THREE.MeshPhysicalMaterialParameters> = {}) {
   return new THREE.MeshPhysicalMaterial({
@@ -49,15 +65,14 @@ function CenterStar({ material }: { material: Record<Seat, THREE.MeshPhysicalMat
     return new THREE.ExtrudeGeometry(s, { depth: 0.1, bevelEnabled: false })
   }, [])
 
-  const rotations: Record<Seat, number> = { 0: Math.PI / 2, 1: Math.PI, 2: -Math.PI / 2, 3: 0 }
-
   return (
     <group position={[0, TILE_Y + TILE_H / 2, 0]}>
-      {SEATS.map((seat) => (
-        <mesh key={seat} geometry={geometry} rotation={[-Math.PI / 2, 0, rotations[seat]]}>
+      {SEATS.map((seat) => {
+        const [x, z] = HOME_TRIANGLE_DIRECTIONS[seat]
+        return <mesh key={seat} geometry={geometry} rotation={[-Math.PI / 2, 0, Math.atan2(x, z)]}>
           <primitive object={material[seat]} attach="material" />
         </mesh>
-      ))}
+      })}
     </group>
   )
 }
@@ -92,9 +107,13 @@ export default function Board3D() {
           plastic(SEAT_HEX[s], { emissive: new THREE.Color(SEAT_HEX[s]), emissiveIntensity: 0.3, roughness: 0.45 }),
         ]),
       ) as Record<Seat, THREE.MeshPhysicalMaterial>,
+      yardInset: Object.fromEntries(SEATS.map(seat => [seat, plastic(DECK, {
+        emissive: new THREE.Color(SEAT_HEX[seat]), emissiveIntensity: 0, roughness: .65, clearcoat: .2,
+      })])) as Record<Seat, THREE.MeshPhysicalMaterial>,
       pip: new THREE.MeshBasicMaterial({ color: new THREE.Color('#5b6480'), toneMapped: false }),
     }
   }, [])
+  useYardGlow(materials.yardInset)
 
   return (
     <group>
@@ -135,7 +154,7 @@ export default function Board3D() {
               position={[0, TILE_Y + 0.04, 0]}
               receiveShadow
             >
-              <primitive object={materials.deck} attach="material" />
+              <primitive object={materials.yardInset[seat]} attach="material" />
             </RoundedBox>
             {[
               [-0.95, -0.95],

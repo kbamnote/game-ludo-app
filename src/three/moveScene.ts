@@ -1,6 +1,7 @@
 import type { MoveAnimation } from '../game/store'
+import { CORONATION_MS, PODIUM_HEIGHT } from '../game/coronation'
 import { cellFor, cellForProgress, YARD, type Token } from '../game/rules'
-import { RESCUE_ARRIVAL_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
+import { RESCUE_ARRIVAL_MS, RESCUE_HOME_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
 import { toWorld } from './layout'
 
 export function ease(t: number, a: number, b: number) {
@@ -8,6 +9,20 @@ export function ease(t: number, a: number, b: number) {
   return u * u * (3 - 2 * u)
 }
 const mix = (a: number, b: number, u: number) => a + (b - a) * u
+
+export function coronationFrame(elapsed: number) {
+  const exit = ease(elapsed, CORONATION_MS - 760, CORONATION_MS)
+  return {
+    march: ease(elapsed, 120, 3040),
+    approach: ease(elapsed, 2170, 4160),
+    crown: ease(elapsed, 4460, 5410),
+    retreat: ease(elapsed, 5500, 6750),
+    lift: PODIUM_HEIGHT * ease(elapsed, 5530, 6850) * (1 - exit),
+    focus: ease(elapsed, 0, 850) * (1 - exit),
+    portrait: ease(elapsed, 4100, 6550),
+    exit,
+  }
+}
 
 export function walkingPose(token: Token, move: MoveAnimation, elapsed: number) {
   const step = Math.min(move.path.length - 1, Math.max(0, Math.floor(elapsed / STEP_MS)))
@@ -58,14 +73,14 @@ export function rescuePose(t: number, distance: number) {
   const emerge = ease(t, 1.88, 2.80)
   const load = ease(t, 3.65, 4.52)
   const lift = ease(t, 3.06, 3.65)
-  const recover = ease(t, 6.02, 6.43)
+  const recover = ease(t, 6.02, RESCUE_HOME_MS / 1000)
   const stretcherZ = mix(mix(park, 0, emerge), park, load)
   const stretcherX = .40 * emerge * (1 - load)
   const stretcherY = .13 + .26 * lift
   return {
     van, vanX: .80 * (1 - arrive + depart), doors, emerge, lift, load, recover, stretcherZ, stretcherX, stretcherY,
     crewVisible: t >= 1.88 && t < 4.66,
-    vanScale: ease(t, .38, .62) * (1 - ease(t, 6.05, 6.43)),
+    vanScale: ease(t, .38, .62) * (1 - ease(t, 6.05, RESCUE_HOME_MS / 1000)),
     patientX: stretcherX * lift,
     patientZ: t < 4.57 ? mix(0, .76, ease(t, .32, .77)) + stretcherZ * lift : distance - .60 * (1 - recover),
     patientY: (.14 * ease(t, .32, .77) + (stretcherY + .12 - .14) * lift) * (1 - recover),

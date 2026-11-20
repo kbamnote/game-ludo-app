@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { router } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Animated, Easing, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
@@ -7,6 +7,7 @@ import Backdrop from '../ui/Backdrop'
 import BrandLockup from '../ui/BrandLockup'
 import { LABEL, NUMERIC, OutlineText } from '../ui/arcade'
 import { A } from '../theme'
+import { useAccount } from '../net/account'
 
 /** How long the splash holds before handing over to the lobby. */
 const LOAD_MS = 2400
@@ -14,8 +15,9 @@ const LOAD_MS = 2400
 export default function SplashScreen() {
   const { height, width } = useWindowDimensions()
   const [progress, setProgress] = useState(0)
-  const shine = useRef(new Animated.Value(0)).current
-  const done = useRef(false)
+  const [shine] = useState(() => new Animated.Value(0))
+  const ready = useAccount(s => s.ready)
+  const avatar = useAccount(s => s.session?.account.avatar)
 
   // Fill the bar, then move on by itself — no tap required.
   useEffect(() => {
@@ -23,14 +25,14 @@ export default function SplashScreen() {
     const id = setInterval(() => {
       const pct = Math.min(100, Math.round(((Date.now() - started) / LOAD_MS) * 100))
       setProgress(pct)
-      if (pct >= 100 && !done.current) {
-        done.current = true
-        clearInterval(id)
-        router.replace('/home')
-      }
+      if (pct >= 100) clearInterval(id)
     }, 40)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    if (ready && progress === 100) router.replace(avatar == null ? '/onboarding' : '/home')
+  }, [avatar, progress, ready])
 
   // Travelling highlight along the loading bar.
   useEffect(() => {

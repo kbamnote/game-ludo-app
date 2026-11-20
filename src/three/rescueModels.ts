@@ -86,7 +86,7 @@ function ambulance(material: T.Material, trim: string) {
   return { van, doors, lamps }
 }
 
-function medic(material: T.Material, index: number) {
+export function createMedic(material: T.Material, index: number) {
   const root = new T.Group(), torso = new T.Group()
   const skin = ['#925b45', '#ecb287', '#a97152', '#c78965'][index]
   const hair = ['#3c2b31', '#493026', '#282533', '#62382b'][index]
@@ -128,7 +128,7 @@ export function createRescueRig(trim: string) {
   const material = new T.MeshStandardMaterial({ vertexColors: true, roughness: .58 })
   const vehicle = ambulance(material, trim)
   root.add(vehicle.van)
-  const crew = Array.from({ length: 4 }, (_, i) => medic(material, i))
+  const crew = Array.from({ length: 4 }, (_, i) => createMedic(material, i))
   crew.forEach(({ root: person }) => root.add(person))
   const parts = new Parts(material)
   parts.box([0, .04, 0], [.55, .12, 1.64], '#eb9648', .055)

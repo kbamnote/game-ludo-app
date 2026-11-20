@@ -6,13 +6,32 @@ import { Pawn } from '../ui/ArcadeIcons'
 import { BADGES, useProfile } from '../game/profile'
 import { useIdentity } from '../game/identity'
 import { CREW } from '../game/character'
+import { logOut } from '../net/account'
+import { useOnline } from '../net/online'
+import Icon from '../ui/Icon'
 
 export default function Profile() {
   const { name, setName, hydrated, character } = useIdentity()
   const { badge, animateWheel, toggleWheel, level } = useProfile()
   const pawn = BADGES.find((item) => badge === item.id) ?? BADGES[0]
   const [draft, setDraft] = useState(name)
+  const [leaving, setLeaving] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
   useEffect(() => setDraft(name), [name])
+
+  async function signOut() {
+    setLeaving(true)
+    setLogoutError('')
+    try {
+      await logOut()
+      useOnline.getState().disconnect()
+      router.replace('/onboarding')
+    } catch {
+      setLogoutError('Could not log out. Please try again.')
+      setLeaving(false)
+    }
+  }
+
   return <ArcadePage title="Player settings">
     <View style={s.card}><View style={s.line}><Pawn size={42} color={pawn.color} dark={pawn.dark} />
       <View><Text style={s.heading}>{name}</Text><Text style={s.copy}>Level {level}</Text></View></View>
@@ -26,5 +45,8 @@ export default function Profile() {
     <View style={[s.card, s.line]}><Text style={[s.copy, { flex: 1 }]}>Animate the prize wheel</Text>
       <Switch accessibilityLabel="Animate the prize wheel" value={animateWheel} onValueChange={toggleWheel} /></View>
     <MenuRow art={<Pawn size={25} color={pawn.color} dark={pawn.dark} />} title="Change lobby pawn" detail={pawn.name + ' equipped'} onPress={() => router.push('/inventory')} />
+    <Action label={leaving ? 'Logging out…' : 'Log out'} icon={<Icon name="logout" size={18} color="#372508" />}
+      disabled={leaving} onPress={() => void signOut()} />
+    {!!logoutError && <Text accessibilityLiveRegion="polite" style={s.notice}>{logoutError}</Text>}
   </ArcadePage>
 }

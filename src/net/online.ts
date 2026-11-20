@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client'
 import { create } from 'zustand'
 import { SERVER_URL } from './config'
+import { useAccount } from './account'
 import { identityReady, useIdentity } from '../game/identity'
 import { useMatch, type PlayerConfig, type Phase } from '../game/store'
 import type { Seat, Token } from '../game/rules'
@@ -9,6 +10,11 @@ import { REACTIONS, type ReactionKind, type ReactionRequest } from '../game/reac
 import { isSoundId } from '../game/soundboard'
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+
+function identification() {
+  const { playerId, name } = useIdentity.getState()
+  return { playerId, name, token: useAccount.getState().session?.token }
+}
 
 export interface RoomMember {
   playerId: string
@@ -59,6 +65,7 @@ interface OnlineState {
   room: RoomSnapshot | null
 
   connect: () => Promise<void>
+  disconnect: () => void
   createRoom: (publicTable?: boolean) => Promise<boolean>
   joinRoom: (code: string) => Promise<boolean>
   setReady: (ready: boolean) => void
@@ -144,14 +151,13 @@ export const useOnline = create<OnlineState>((set, get) => {
 
     connect: async () => {
       if (socket?.connected) {
-        const { playerId, name } = useIdentity.getState()
-        socket.emit('identify', { playerId, name })
+        socket.emit('identify', identification())
         set({ status: 'connected' })
         return
       }
       set({ status: 'connecting', error: null })
 
-      const identity = await identityReady()
+      await identityReady()
 
       if (!socket) {
         let restoringRoom = false
@@ -167,7 +173,7 @@ export const useOnline = create<OnlineState>((set, get) => {
 
         socket.on('connect', () => {
           const id = useIdentity.getState()
-          socket?.emit('identify', { playerId: id.playerId, name: id.name })
+          socket?.emit('identify', identification())
           set({ status: 'connected', error: null })
 
           // Re-enter the room after a drop so a flaky network does not end the match.
@@ -205,6 +211,10 @@ export const useOnline = create<OnlineState>((set, get) => {
           bindMatch(room)
         })
 
+        socket.on('match:rolled', (event: { die: number }) => {
+          useMatch.getState().applyServerRoll(event.die)
+        })
+
         socket.on(
           'match:moved',
           (payload: { tokenId: string; path: number[]; captures: string[]; snapshot: RoomSnapshot }) => {
@@ -227,7 +237,7 @@ export const useOnline = create<OnlineState>((set, get) => {
       }
 
       socket.connect()
-      socket.emit('identify', { playerId: identity.playerId, name: identity.name })
+      socket.emit('identify', identification())
     },
 
     createRoom: async (publicTable = false) => {
@@ -273,6 +283,14 @@ export const useOnline = create<OnlineState>((set, get) => {
       socket?.emit('room:leave')
       useMatch.getState().detachServer()
       set({ room: null, error: null })
+    },
+
+    disconnect: () => {
+      get().leaveRoom()
+      socket?.removeAllListeners().disconnect()
+      socket = null
+      useMatch.getState().reset()
+      set({ status: 'idle', busy: false })
     },
 
     clearError: () => set({ error: null }),

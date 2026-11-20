@@ -112,6 +112,15 @@ export const YARD_CELLS: Record<Seat, ReadonlyArray<readonly [number, number]>> 
 
 export const CENTER_CELL: readonly [number, number] = [7, 7]
 
+/** Outward direction from the centre into each seat's finish triangle. */
+export const HOME_TRIANGLE_DIRECTIONS: Record<Seat, readonly [number, number]> = {
+  0: [-1, 0], 1: [0, -1], 2: [1, 0], 3: [0, 1],
+}
+
+const FINISH_SPOTS = [
+  [1.16, -.62], [1.16, .62], [.72, -.26], [.72, .26],
+] as const
+
 /** Absolute track index for a seat's progress value, or null when off-track. */
 export function trackIndexFor(seat: Seat, progress: number): number | null {
   if (progress < 0 || progress > LAST_TRACK_STEP) return null
@@ -120,18 +129,17 @@ export function trackIndexFor(seat: Seat, progress: number): number | null {
 
 /** Grid cell for a token, used by both the 2D minimap and the 3D board. */
 export function cellFor(token: Token): readonly [number, number] {
-  if (token.progress === YARD) return YARD_CELLS[token.seat][token.index]
-  if (token.progress === HOME_STEP) return CENTER_CELL
-  if (token.progress > LAST_TRACK_STEP) {
-    return HOME_COLUMN_CELLS[token.seat][token.progress - LAST_TRACK_STEP - 1]
-  }
-  return TRACK_CELLS[trackIndexFor(token.seat, token.progress)!]
+  return cellForProgress(token.seat, token.progress, token.index)
 }
 
 /** Grid cell for an arbitrary seat/progress pair (used to animate step by step). */
 export function cellForProgress(seat: Seat, progress: number, tokenIndex = 0): readonly [number, number] {
   if (progress === YARD) return YARD_CELLS[seat][tokenIndex]
-  if (progress >= HOME_STEP) return CENTER_CELL
+  if (progress >= HOME_STEP) {
+    const [dx, dz] = HOME_TRIANGLE_DIRECTIONS[seat]
+    const [depth, offset] = FINISH_SPOTS[tokenIndex] ?? FINISH_SPOTS[0]
+    return [CENTER_CELL[0] + dx * depth - dz * offset, CENTER_CELL[1] + dz * depth + dx * offset]
+  }
   if (progress > LAST_TRACK_STEP) return HOME_COLUMN_CELLS[seat][progress - LAST_TRACK_STEP - 1]
   return TRACK_CELLS[trackIndexFor(seat, progress)!]
 }

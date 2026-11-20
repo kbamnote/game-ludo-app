@@ -31,7 +31,6 @@ import Backdrop from '../ui/Backdrop'
 import BrandLockup from '../ui/BrandLockup'
 import { A } from '../theme'
 import { BADGES, formatCompact, useProfile } from '../game/profile'
-import { practice } from '../game/localTable'
 
 function TopBar() {
   const insets = useSafeAreaInsets()
@@ -217,7 +216,7 @@ export default function HomeScreen() {
             height={tileH}
             emblem={<VsEmblem size={compact ? 30 : 36} />}
             label="COMPUTER"
-            onPress={practice}
+            onPress={() => router.push('/computer')}
           />
           <ModeTile
             width={duo}

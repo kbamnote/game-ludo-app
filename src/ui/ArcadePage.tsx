@@ -55,10 +55,13 @@ export function TableArt({ title, subtitle }: { title: string; subtitle: string 
   )
 }
 
-export function Action({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-    style={({ pressed }) => [s.action, { opacity: disabled ? 0.55 : pressed ? 0.83 : 1 }]}>
-    <Text style={s.actionText}>{label}</Text>
+export function Action({ label, onPress, disabled = false, icon }: {
+  label: string; onPress: () => void; disabled?: boolean; icon?: ReactNode
+}) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+    style={({ pressed }) => [s.action, icon != null && s.actionWithIcon, { opacity: disabled ? 0.55 : pressed ? 0.83 : 1 }]}>
+    {icon != null && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={s.actionIcon}>{icon}</View>}
+    <Text style={[s.actionText, icon != null && s.actionIconLabel]}>{label}</Text>
   </Pressable>
 }
 
@@ -88,6 +91,9 @@ export const s = StyleSheet.create({
   copy: { color: '#c5d7ee', fontFamily: LABEL, fontSize: 15, lineHeight: 21 },
   notice: { color: '#ffe08a', fontFamily: NUMERIC, fontSize: 16, textAlign: 'center' },
   action: { backgroundColor: '#ffc651', borderColor: '#ffe49c', borderWidth: 1, borderBottomColor: '#be7d18', borderBottomWidth: 4, borderRadius: 14, alignItems: 'center', justifyContent: 'center', minHeight: 49, padding: 9 },
+  actionWithIcon: { flexDirection: 'row', gap: 9 },
+  actionIcon: { width: 26, height: 26, borderRadius: 8, backgroundColor: '#fff1d2', alignItems: 'center', justifyContent: 'center' },
+  actionIconLabel: { flexShrink: 1 },
   actionText: { fontFamily: NUMERIC, color: '#372508', fontSize: 17, textAlign: 'center' },
   input: { borderRadius: 12, borderColor: '#5875a0', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, minHeight: 44, backgroundColor: '#0a2044', color: '#fff', fontFamily: LABEL, fontSize: 16 },
   center: { alignItems: 'center', justifyContent: 'center', gap: 10 },

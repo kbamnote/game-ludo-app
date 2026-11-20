@@ -15,7 +15,7 @@ export const teamModels = [
 ] as const
 export const varsityPreviewModel = require('../../assets/models/Burgundy.glb')
 export const boardModel = require('../../assets/models/MidnightBoard.glb')
-const models = new Map<number, Promise<GLTF>>()
+const models = new Map<number | string, Promise<GLTF>>()
 const avatars = new Map<string,Promise<GLTF>>()
 
 async function readAvatar(id: string) {
@@ -65,7 +65,7 @@ export function loadAvatar(id: string) {
 }
 
 // All match GLBs are self-contained and use vertex colors or solid materials.
-async function readModel(module: number) {
+async function readModel(module: number | string) {
   const asset = Asset.fromModule(module)
   let bytes: ArrayBuffer
   if (Platform.OS === 'web') {
@@ -84,8 +84,10 @@ export function useGameModel(module: number | string) {
   const [result, setResult] = useState<{ module: number | string; model: GLTF } | null>(null)
   useEffect(() => {
     let mounted = true
-    let request = typeof module === 'string' ? loadAvatar(module) : models.get(module)
-    if (!request && typeof module === 'number') {
+    // Expo web can resolve bundled GLBs to URL strings rather than Metro IDs.
+    const isAvatar = typeof module === 'string' && /^[a-f0-9]{64}$/.test(module)
+    let request = isAvatar ? loadAvatar(module) : models.get(module)
+    if (!request && !isAvatar) {
       request = readModel(module).catch((error) => {
         models.delete(module)
         console.warn('[match model]', error)

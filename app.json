@@ -3,7 +3,7 @@
     "name": "CGP - Cockroach Game Party",
     "slug": "cgp-cockroach-game-party",
     "scheme": "cgp",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -11,6 +11,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
@@ -36,10 +37,14 @@
           }
         }
       ],
-      ["expo-audio", {
-        "recordAudioAndroid": false,
-        "enableBackgroundPlayback": false
-      }]
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-secure-store"
     ],
     "ios": {
       "supportsTablet": true,

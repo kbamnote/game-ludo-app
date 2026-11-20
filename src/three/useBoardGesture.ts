@@ -59,7 +59,8 @@ function createBoardGesture() {
     onPanResponderMove: track,
     onPanResponderEnd: track,
     onPanResponderRelease: ({ nativeEvent: e }) => {
-      if (!dragged && Math.hypot(e.pageX - startX, e.pageY - startY) <= TAP_SLOP) onTap?.(tapX, tapY)
+      const touch = e.changedTouches?.[0] ?? e
+      if (!dragged && Math.hypot(touch.pageX - startX, touch.pageY - startY) <= TAP_SLOP) onTap?.(tapX, tapY)
       fingers = 0
     },
     onPanResponderTerminate: () => { dragged = true; fingers = 0 },
