@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native'
 import { ArcadePage, TableArt, Action, s } from '../ui/ArcadePage'
-import { TrophyEmblem } from '../ui/ArcadeIcons'
+import ArcadeArt from '../ui/ArcadeArt'
 import { CUP_ROUNDS, useProfile } from '../game/profile'
 import { CUP_RIVALS, openTable } from '../game/localTable'
 import { useIdentity } from '../game/identity'
@@ -11,9 +11,9 @@ export default function Tournament() {
   const wins = useProfile((p) => p.cupWins)
   const name = useIdentity((p) => p.name)
   const rival = CUP_RIVALS[round]
-  return <ArcadePage title="Tournament">
-    <TableArt title="Midnight Cup" subtitle="Win three solo duels to take the trophy." />
-    <View style={[s.card, s.line]}><TrophyEmblem size={46} /><View style={{ flex: 1 }}><Text style={s.heading}>1,000 coin prize</Text><Text style={s.copy}>Cups won · {wins}</Text></View></View>
+  return <ArcadePage title="Tournament" art="tournament">
+    <TableArt art="tournament" title="Midnight Cup" subtitle="Win three solo duels to take the trophy." />
+    <View style={[s.card, s.line]}><ArcadeArt name="tournament" /><View style={{ flex: 1 }}><Text style={s.heading}>1,000 coin prize</Text><Text style={s.copy}>Cups won · {wins}</Text></View></View>
     <View style={s.card}><Text style={s.heading}>Cup ladder</Text>
       {CUP_ROUNDS.map((stage, i) => <View key={stage} style={s.line}>
         <Icon name={i < round ? 'check-circle' : i === round ? 'play-circle-filled' : 'lock'} color={i <= round ? '#ffd47a' : '#93a8c5'} />

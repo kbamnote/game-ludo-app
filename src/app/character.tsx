@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { useLocalSearchParams } from 'expo-router'
-import { CREW, VARSITY, type Character, type CharacterModel } from '../game/character'
+import { DEFAULT_CHARACTER_MODEL, VARSITY, replaceRetiredCharacter, type Character } from '../game/character'
+import { bundledMetaPerson, characterName } from '../game/metapersonRoster'
 import { loadAvatar } from '../three/useCharacterModel'
 import { useIdentity } from '../game/identity'
-import { SEAT_HEX } from '../game/rules'
 import CharacterPreview from '../three/CharacterPreview'
 import type { CharacterPose } from '../three/Pawn3D'
 import SceneBoundary from '../three/SceneBoundary'
 import { Action, ArcadePage, s } from '../ui/ArcadePage'
 import MetaPersonCreator from '../ui/MetaPersonCreator'
+import { AvatarOptions } from '../ui/AvatarPicker'
 
 function Editor() {
   const equipped = useIdentity(s => s.character)
   const equip = useIdentity(s => s.equipCharacter)
-  const [draft, setDraft] = useState<Character>(equipped ?? { model: VARSITY })
+  const [draft, setDraft] = useState<Character>(equipped ?? { model: DEFAULT_CHARACTER_MODEL })
   const [close, setClose] = useState(false)
   const [creating, setCreating] = useState(false)
   const { avatar } = useLocalSearchParams<{ avatar?: string }>()
@@ -61,29 +63,24 @@ function Editor() {
       <View style={[s.line, { justifyContent: 'space-between' }]}><Text style={s.copy}>Drag to rotate</Text>
         <Pressable accessibilityRole="button" onPress={() => setClose(v => !v)}><Text style={s.copy}>{close ? 'Full body' : 'Close-up'}</Text></Pressable></View>
       <View style={s.card}><Text style={s.heading}>Choose your character</Text>
-        <View style={s.line}>{CREW.map((name, i) => {
-          const model = i as CharacterModel
-          const selected = !draft.avatarId && draft.model === model
-          return <Pressable key={name} accessibilityRole="radio" accessibilityState={{ checked: selected }}
-            onPress={() => {
-              if (draft.avatarId || model !== draft.model) setDraft(model === VARSITY || draft.model === VARSITY ? { model } : { ...draft, model })
-              setMessage('')
-            }}
-            style={{ padding: 10, borderWidth: 2, borderRadius: 12, borderColor: selected ? (model === VARSITY ? '#f0909b' : SEAT_HEX[model]) : '#355889', backgroundColor: '#0a2044' }}>
-            <Text style={s.copy}>{name}</Text></Pressable>
-        })}</View>
+        <AvatarOptions selected={draft} onSelect={character => {
+          if (character.model !== draft.model || character.avatarId !== draft.avatarId) {
+            setDraft(character.model !== VARSITY && draft.model !== VARSITY ? { ...draft, model: character.model } : character)
+          }
+          setMessage('')
+        }} />
         {__DEV__ && draft.model === VARSITY && !draft.avatarId && <Action label="Preview 3D head sample" onPress={() => {
           setSampleClose(true); setSampleClip('Idle')
         }} />}
         <Action label="Create avatar from selfie" onPress={() => setCreating(true)} />
-        {draft.face && <Pressable accessibilityRole="button" onPress={() => { setDraft({ model: draft.model }); setMessage('') }}>
+        {draft.face && <Pressable accessibilityRole="button" onPress={() => { setDraft(replaceRetiredCharacter({ model: draft.model })); setMessage('') }}>
           <Text style={s.copy}>Remove selfie</Text></Pressable>}
       </View>
-      <Text style={s.copy}>{draft.avatarId ? 'Your MetaPerson avatar' : 'Your selected character'} will be visible to players at your table when equipped.</Text>
+      <Text style={s.copy}>{draft.avatarId && !bundledMetaPerson(draft.avatarId) ? 'Your MetaPerson avatar' : characterName(draft)} will be visible to players at your table when equipped.</Text>
       <Action label={isEquipped ? 'Equipped' : 'Equip for matches'}
         disabled={isEquipped}
-        onPress={() => { equip(draft); setMessage((draft.avatarId ? 'MetaPerson' : CREW[draft.model]) + ' equipped for your next match.') }} />
-      {equipped && <Pressable accessibilityRole="button" onPress={() => { equip(null); setDraft({ model: VARSITY }); setMessage('Your seat’s default character is equipped.') }}>
+        onPress={() => { equip(draft); setMessage(characterName(draft) + ' equipped for your next match.') }} />
+      {equipped && <Pressable accessibilityRole="button" onPress={() => { equip(null); setDraft({ model: DEFAULT_CHARACTER_MODEL }); setMessage('Your seat’s default character is equipped.') }}>
         <Text style={s.copy}>Reset to seat character</Text></Pressable>}
     {!!message && <Text accessibilityLiveRegion="polite" style={s.notice}>{message}</Text>}
   </>
@@ -91,5 +88,5 @@ function Editor() {
 
 export default function CharacterScreen() {
   const hydrated = useIdentity(s => s.hydrated)
-  return <ArcadePage title="My character">{hydrated ? <Editor /> : <Text style={s.copy}>Loading character…</Text>}</ArcadePage>
+  return <ArcadePage title="My character" art="character">{hydrated ? <Editor /> : <Text style={s.copy}>Loading character…</Text>}</ArcadePage>
 }

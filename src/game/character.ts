@@ -1,7 +1,8 @@
 import type { Seat } from './rules'
 
 export const VARSITY = 4
-export const CREW = ['Ruby', 'Jade', 'Amber', 'Sapphire', 'Varsity'] as const
+export const CREW = ['Ruby', 'Jade', 'Amber', 'Sapphire'] as const
+export const DEFAULT_CHARACTER_MODEL = 0
 export type CharacterModel = Seat | typeof VARSITY
 export const FACE_SIZE = 64
 
@@ -19,8 +20,13 @@ export function isCharacter(value: unknown): value is Character {
   if (!value || typeof value !== 'object' || !('model' in value)) return false
   if ('avatarId' in value) return value.model === VARSITY && typeof value.avatarId === 'string'
     && /^[a-f0-9]{64}$/.test(value.avatarId) && !('face' in value) && !('fit' in value)
-  return typeof value.model === 'number' && Number.isInteger(value.model) && value.model >= 0 && value.model < CREW.length
+  return typeof value.model === 'number' && Number.isInteger(value.model) && value.model >= 0 && value.model <= VARSITY
     && (value.model !== VARSITY || !('face' in value) || ('fit' in value && typeof value.fit === 'string' && /^[A-Za-z0-9+/]{182}==$/.test(value.fit)))
     && (!('face' in value) || (typeof value.face === 'string' && value.face.length === FACE_SIZE * FACE_SIZE * 4
       && /^[A-Za-z0-9+/]+$/.test(value.face)))
+}
+
+export function replaceRetiredCharacter(character: Character): Character {
+  return character.model === VARSITY && !character.avatarId && !character.face
+    ? { model: DEFAULT_CHARACTER_MODEL } : character
 }

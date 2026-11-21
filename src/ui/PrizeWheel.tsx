@@ -1,5 +1,5 @@
 import { Animated, View, useWindowDimensions } from 'react-native'
-import Svg, { Circle, G, Path, Text as WheelText } from 'react-native-svg'
+import Svg, { Circle, Defs, G, LinearGradient, Path, RadialGradient, Stop, Text as WheelText } from 'react-native-svg'
 import { WHEEL_PRIZES } from '../game/profile'
 import { Coin } from './ArcadeIcons'
 
@@ -15,8 +15,19 @@ export default function PrizeWheel({ angle }: { angle: Animated.Value }) {
   return <View accessible accessibilityLabel="Six coin prizes on a gold wheel" style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <Animated.View style={{ position: 'absolute', transform: [{ rotate: rotation }] }}>
       <Svg width={size} height={size} viewBox="0 0 240 240">
-        <Circle cx="120" cy="120" r="118" fill="#9e611f" />
-        <Circle cx="120" cy="118" r="115" fill="#f4bb4f" />
+        <Defs>
+          <LinearGradient id="wheel-metal" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0" stopColor="#fff2b7" /><Stop offset=".35" stopColor="#db9b34" />
+            <Stop offset=".63" stopColor="#fff0a2" /><Stop offset="1" stopColor="#ae691c" />
+          </LinearGradient>
+          <RadialGradient id="wheel-finish" cx="50%" cy="44%" r="55%">
+            <Stop offset="0" stopColor="#fff0bf" stopOpacity=".26" />
+            <Stop offset=".71" stopColor="#fff0bf" stopOpacity="0" />
+            <Stop offset="1" stopColor="#06142a" stopOpacity=".36" />
+          </RadialGradient>
+        </Defs>
+        <Circle cx="120" cy="120" r="118" fill="#805014" />
+        <Circle cx="120" cy="119" r="115" fill="url(#wheel-metal)" stroke="#ffdc83" />
         {WHEEL_PRIZES.map((prize, i) => {
           const a = i * 60
           const [x1, y1] = point(a - 30, 105)
@@ -25,6 +36,7 @@ export default function PrizeWheel({ angle }: { angle: Animated.Value }) {
             <WheelText x="120" y="54" fill="white" fontWeight="bold" fontSize="16" textAnchor="middle" transform={`rotate(${a} 120 120)`}>{prize}</WheelText>
           </G>
         })}
+        <Circle cx="120" cy="120" r="103" fill="url(#wheel-finish)" />
         {Array.from({ length: 24 }, (_, i) => { const [cx, cy] = point(i * 15, 110); return <Circle key={i} cx={cx} cy={cy} r="2" fill="#fff4be" /> })}
       </Svg>
     </Animated.View>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber/native'
 import { SEAT_HEX, type Token } from '../game/rules'
-import type { MoveAnimation } from '../game/store'
+import { matchTime, type MoveAnimation } from '../game/store'
 import { DECK_Y } from './layout'
 import { ease, rescuePose, rescueSite, rescueTime } from './moveScene'
 import { createRescueRig, disposeRescueRig } from './rescueModels'
@@ -44,7 +44,7 @@ export default function Rescue3D({ move, victim, index }: { move: MoveAnimation;
   const rig = useMemo(() => createRescueRig(SEAT_HEX[victim.seat]), [victim.seat])
   const site = useMemo(() => rescueSite(victim), [victim])
   useEffect(() => () => disposeRescueRig(rig.root), [rig])
-  useFrame(() => animateRescue(rig, rescueTime(move, Date.now() - move.startedAt, index), site.distance), -1)
+  useFrame(() => animateRescue(rig, rescueTime(move, matchTime() - move.startedAt, index), site.distance), -1)
   return <group position={[site.x, DECK_Y + .065, site.z]} rotation={[0, site.yaw, 0]}>
     <primitive object={rig.root} />
   </group>

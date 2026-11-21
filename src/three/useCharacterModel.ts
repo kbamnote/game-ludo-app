@@ -4,6 +4,7 @@ import { Asset } from 'expo-asset'
 import { Directory, File, Paths } from 'expo-file-system'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { prepareMetaPerson } from './metaPersonRig'
+import { bundledMetaPerson } from '../game/metapersonRoster'
 import { SERVER_URL } from '../net/config'
 
 export const teamModels = [
@@ -20,7 +21,9 @@ const avatars = new Map<string,Promise<GLTF>>()
 
 async function readAvatar(id: string) {
   if (!/^[a-f0-9]{64}$/.test(id)) throw Error('Invalid avatar ID.')
-  const url = SERVER_URL+'/avatars/metaperson/'+id+'.glb'
+  const bundled = bundledMetaPerson(id)
+  const asset = bundled ? Asset.fromModule(bundled.asset) : null
+  const url = asset?.uri ?? SERVER_URL+'/avatars/metaperson/'+id+'.glb'
   const loader = new GLTFLoader()
   let bytes: ArrayBuffer
   if (Platform.OS === 'web') {
@@ -28,16 +31,24 @@ async function readAvatar(id: string) {
     if (!r.ok) throw Error('The avatar could not be downloaded.')
     bytes = await r.arrayBuffer()
   } else {
-    const dir = new Directory(Paths.cache,'metaperson',id)
+    const dir = asset
+      ? new Directory(Paths.cache, 'metaperson-bundled', id, asset.hash ?? 'original')
+      : new Directory(Paths.cache, 'metaperson', id)
     dir.create({ idempotent:true,intermediates:true })
     const file = new File(dir,'model.glb')
-    if (!file.exists) {
-      const tmp = new File(dir,'model.tmp')
-      if (tmp.exists) tmp.delete()
-      await File.downloadFileAsync(url,tmp)
-      tmp.move(file)
+    if (asset) {
+      await asset.downloadAsync()
+      if (!asset.localUri) throw Error('The bundled avatar file is unavailable.')
+      bytes = await new File(asset.localUri).arrayBuffer()
+    } else {
+      if (!file.exists) {
+        const tmp = new File(dir,'model.tmp')
+        if (tmp.exists) tmp.delete()
+        await File.downloadFileAsync(url,tmp)
+        tmp.move(file)
+      }
+      bytes = await file.arrayBuffer()
     }
-    bytes = await file.arrayBuffer()
     // Expo GL can upload local image files directly. Extract embedded images
     // before GLTFLoader starts loading materials to avoid native Blob URLs.
     loader.register(parser => ({ name:'ExpoAvatarTextures', async beforeRoot() {

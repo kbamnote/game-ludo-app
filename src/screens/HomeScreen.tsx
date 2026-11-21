@@ -1,7 +1,8 @@
-import { type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { router } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   CurrencyPill,
@@ -11,28 +12,21 @@ import {
   LABEL,
   NUMERIC,
   OutlineText,
-  RailBadge,
 } from '../ui/arcade'
 import {
   Coin,
-  Die,
   Gem,
-  GlobeEmblem,
-  HeartsEmblem,
-  PassPlayEmblem,
   Pawn,
-  SpinEmblem,
-  SwordsEmblem,
-  TrophyEmblem,
-  VsEmblem,
 } from '../ui/ArcadeIcons'
 import Icon from '../ui/Icon'
 import Backdrop from '../ui/Backdrop'
-import BrandLockup from '../ui/BrandLockup'
+import ArcadeArt from '../ui/ArcadeArt'
+import HomeAvatarPicker from '../ui/HomeAvatarPicker'
+import { HomeArtMotion, HomeBrand, HomeEmblem } from '../ui/HomeArt'
 import { A } from '../theme'
 import { BADGES, formatCompact, useProfile } from '../game/profile'
 
-function TopBar() {
+function TopBar({ narrow }: { narrow: boolean }) {
   const insets = useSafeAreaInsets()
   const coins = useProfile((s) => s.coins)
   const gems = useProfile((s) => s.gems)
@@ -42,7 +36,7 @@ function TopBar() {
 
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
-      <View style={styles.topRow}>
+      <View style={[styles.topRow, narrow && styles.topRowNarrow]}>
         {/* Avatar with level chip */}
         <Pressable accessibilityLabel="Player profile" style={styles.avatarWrap} onPress={() => router.push('/profile')}>
           <LinearGradient colors={[A.goldLite, A.goldMid]} style={styles.avatarRing}>
@@ -56,15 +50,15 @@ function TopBar() {
           </View>
         </Pressable>
 
-        <IconButton label="Player settings" icon={<Icon name="settings" size={18} color="#dbe9ff" />} onPress={() => router.push('/profile')} />
-        <IconButton label="Reward inbox" icon={<Icon name="mail" size={17} color="#dbe9ff" />} onPress={() => router.push('/inbox')} />
+        <IconButton narrow={narrow} label="Player settings" icon={<Icon name="settings" size={18} color="#dbe9ff" />} onPress={() => router.push('/profile')} />
+        <IconButton narrow={narrow} label="Reward inbox" icon={<Icon name="mail" size={17} color="#dbe9ff" />} onPress={() => router.push('/inbox')} />
 
         <View style={{ flex: 1 }} />
 
-        <CurrencyPill icon={<Gem size={22} />} value={String(gems)} minWidth={30} onAdd={() => router.push('/inventory')} />
-        <CurrencyPill icon={<Coin size={22} />} value={formatCompact(coins)} minWidth={46} onAdd={() => router.push('/inventory')} />
+        <CurrencyPill icon={<Gem size={narrow ? 17 : 22} />} value={String(gems)} minWidth={narrow ? 14 : 30} onAdd={() => router.push('/inventory')} />
+        <CurrencyPill icon={<Coin size={narrow ? 17 : 22} />} value={formatCompact(coins)} minWidth={narrow ? 20 : 46} onAdd={() => router.push('/inventory')} />
 
-        <Pressable style={styles.cart} onPress={() => router.push('/inventory')}>
+        <Pressable style={[styles.cart, narrow && styles.cartNarrow]} onPress={() => router.push('/inventory')}>
           <Icon name="shopping-cart" size={20} color={A.gold} />
         </Pressable>
       </View>
@@ -72,15 +66,14 @@ function TopBar() {
   )
 }
 
-function IconButton({ icon, label, onPress }: { icon: ReactNode; label: string; onPress: () => void }) {
+function IconButton({ icon, label, narrow, onPress }: { icon: ReactNode; label: string; narrow: boolean; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.iconButton} onPress={onPress}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.iconButton, narrow && styles.iconButtonNarrow]} onPress={onPress}>
       {icon}
     </Pressable>
   )
 }
 
-/** One of the five big mode tiles. */
 function ModeTile({
   emblem,
   label,
@@ -100,13 +93,14 @@ function ModeTile({
     <View style={{ width, alignItems: 'center' }}>
       <GoldPanel
         onPress={onPress}
+        accessibilityLabel={label === 'PASS N PLAY' ? 'Pass and play' : label}
         radius={13}
         style={{ width }}
         contentStyle={{ height, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}
       >
         <View style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>{emblem}</View>
         <View style={{ width: '100%', paddingHorizontal: 4, paddingBottom: 4 }}>
-          <GoldBar label={label} size={width > 110 ? 15 : 13} paddingVertical={3} radius={8} />
+          <GoldBar label={label} size={width > 110 ? 15 : 13} paddingVertical={3} radius={8} labelShadow={label === 'PASS N PLAY'} />
         </View>
       </GoldPanel>
       {players ? (
@@ -123,62 +117,32 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
   const luckyRolls = useProfile((s) => s.luckyRolls)
+  const [heroHeight, setHeroHeight] = useState(0)
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
 
   // Everything below the hero has a fixed height so the hero can absorb the
   // slack. That is what keeps this screen from ever needing to scroll.
   const compact = height < 700
   const gutter = 10
   const colGap = 8
-  const triple = (width - gutter * 2 - colGap * 2) / 3
   const duo = Math.min((width - gutter * 2 - colGap) / 2, 180)
 
-  const tileH = compact ? 62 : 74
+  const tileH = compact ? 64 : 78
   const navH = compact ? 56 : 62
   const featureH = compact ? 50 : 58
 
-  // The brand lockup grows into whatever vertical room the device leaves, so a
-  // tall screen does not read as a small logo adrift in empty blue.
-  const lockup = Math.min(1.3, Math.max(0.82, height / 760))
+  const boardSize = Math.min(314, width - 40, Math.max(100, (heroHeight || height * .39) * .78))
+  const modeIconSize = compact ? 32 : 41
 
   return (
-    <View style={styles.root}>
+    <HomeArtMotion style={styles.root} pulseEmblems>
       <Backdrop />
-      <TopBar />
+      <TopBar narrow={width < 360} />
 
       {/* Hero zone — flexes to fill whatever is left */}
-      <View style={styles.hero}>
-        {/* Left promo rail */}
-        <View style={[styles.rail, { left: 6, top: 4 }]}>
-          <RailBadge size={compact ? 40 : 46} caption="PACK" onPress={() => router.push('/inventory')}>
-            <Icon name="card-giftcard" size={20} color={A.goldLite} />
-          </RailBadge>
-          <RailBadge size={compact ? 40 : 46} caption="CLUB" onPress={() => router.push('/friends')}>
-            <OutlineText size={18} width={1.8} color={A.gold} outline={A.goldShadow}>
-              K
-            </OutlineText>
-          </RailBadge>
-          <RailBadge size={compact ? 40 : 46} caption="LIVE" captionColor="#ff6b6b" onPress={() => router.push('/voice')}>
-            <Icon name="play-arrow" size={22} color="#ff6b6b" />
-          </RailBadge>
-        </View>
-
-        {/* Right promo rail */}
-        <View style={[styles.rail, { right: 6, top: 4 }]}>
-          <RailBadge size={compact ? 40 : 46} caption="FREE" onPress={() => router.push('/events')}>
-            <Icon name="savings" size={20} color={A.goldLite} />
-          </RailBadge>
-          <RailBadge size={compact ? 40 : 46} caption="GOALS" onPress={() => router.push('/events')}>
-            <Icon name="gps-fixed" size={20} color="#ff8a5c" />
-          </RailBadge>
-          <RailBadge size={compact ? 40 : 46} caption="HELP" onPress={() => router.push('/help')}>
-            <OutlineText size={18} width={1.8} color={A.gold} outline={A.goldShadow}>
-              ?
-            </OutlineText>
-          </RailBadge>
-        </View>
-
+      <View style={styles.hero} onLayout={({ nativeEvent }) => setHeroHeight(nativeEvent.layout.height)}>
         <View style={styles.brand} pointerEvents="none">
-          <BrandLockup scale={lockup * 0.82} />
+          <HomeBrand size={boardSize} />
         </View>
       </View>
 
@@ -186,24 +150,17 @@ export default function HomeScreen() {
       <View style={{ paddingHorizontal: gutter }}>
         <View style={{ flexDirection: 'row', gap: colGap, justifyContent: 'center' }}>
           <ModeTile
-            width={triple}
+            width={duo}
             height={tileH}
-            emblem={<GlobeEmblem size={compact ? 30 : 36} />}
+            emblem={<HomeEmblem name="globe" size={modeIconSize + 4} />}
             label="ONLINE"
             players="2–4"
             onPress={() => router.push('/online')}
           />
           <ModeTile
-            width={triple}
+            width={duo}
             height={tileH}
-            emblem={<SwordsEmblem size={compact ? 30 : 36} />}
-            label="MODES"
-            onPress={() => router.push('/modes')}
-          />
-          <ModeTile
-            width={triple}
-            height={tileH}
-            emblem={<HeartsEmblem size={compact ? 30 : 36} />}
+            emblem={<HomeEmblem name="friends" size={modeIconSize} />}
             label="FRIENDS"
             players="2–4"
             onPress={() => router.push('/friends')}
@@ -214,14 +171,14 @@ export default function HomeScreen() {
           <ModeTile
             width={duo}
             height={tileH}
-            emblem={<VsEmblem size={compact ? 30 : 36} />}
+            emblem={<HomeEmblem name="computer" size={modeIconSize} />}
             label="COMPUTER"
             onPress={() => router.push('/computer')}
           />
           <ModeTile
             width={duo}
             height={tileH}
-            emblem={<PassPlayEmblem size={compact ? 30 : 36} />}
+            emblem={<HomeEmblem name="passPlay" size={modeIconSize} />}
             label="PASS N PLAY"
             onPress={() => router.push('/pass-play')}
           />
@@ -231,32 +188,35 @@ export default function HomeScreen() {
       {/* Minigames + tournament */}
       <View style={[styles.featureRow, { height: featureH }]}>
         <GoldPanel
+          accessibilityLabel="Lucky 7"
           onPress={() => router.push('/lucky7')}
           radius={12}
           style={{ width: featureH + 10 }}
           contentStyle={{ height: featureH, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Die size={featureH * 0.5} pips={6} />
+          <HomeEmblem name="die" size={featureH * .72} />
         </GoldPanel>
 
         <View style={{ flex: 1, marginHorizontal: 10 }}><GoldPanel
+          accessibilityLabel="Tournament"
           onPress={() => router.push('/tournament')}
           radius={12}
           contentStyle={{ height: featureH, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}
         >
-          <TrophyEmblem size={featureH * 0.56} />
+          <HomeEmblem name="trophy" size={featureH * .64} />
           <OutlineText size={compact ? 17 : 20} width={2.6} color={A.gold} outline={A.textOutline}>
             TOURNAMENT
           </OutlineText>
         </GoldPanel></View>
 
         <GoldPanel
+          accessibilityLabel="Daily spin"
           onPress={() => router.push('/spin')}
           radius={12}
           style={{ width: featureH + 10 }}
           contentStyle={{ height: featureH, alignItems: 'center', justifyContent: 'center' }}
         >
-          <SpinEmblem size={featureH * 0.6} />
+          <HomeEmblem name="spin" size={featureH * .73} />
         </GoldPanel>
       </View>
 
@@ -267,7 +227,7 @@ export default function HomeScreen() {
           <OutlineText size={9} width={1.4} color={A.text} outline={A.redDeep}>
             ROLLS
           </OutlineText>
-          <Die size={18} />
+          <HomeEmblem name="die" size={20} />
           <Text style={styles.freeAdText}>×{luckyRolls}</Text>
         </Pressable>
 
@@ -283,37 +243,44 @@ export default function HomeScreen() {
           </LinearGradient>
         </Pressable>
 
-        <View style={{ width: 54 }} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Select avatar" onPress={() => setAvatarPickerOpen(true)}
+          style={({ pressed }) => [styles.freeAd, styles.avatarShortcut, pressed && { opacity: .82 }]}>
+          <ArcadeArt name="character" size={29} />
+          <OutlineText size={9} width={1.4} color={A.goldLite} outline={A.textOutline}>AVATAR</OutlineText>
+        </Pressable>
       </View>
 
       {/* Bottom navigation */}
       <View style={[styles.nav, { height: navH + insets.bottom, paddingBottom: insets.bottom }]}>
-        {[
-          { label: 'HOME', glyph: 'home', to: '/home', active: true },
-          { label: 'EVENT', glyph: 'event', to: '/events', badge: true },
-          { label: 'ADDA', glyph: 'mic', to: '/voice', tag: 'NEW' },
-          { label: 'INVENTORY', glyph: 'casino', to: '/inventory' },
-          { label: 'SOCIAL', glyph: 'forum', to: '/friends' },
-        ].map((item) => (
+        {([
+          { label: 'HOME', art: 'board', to: '/home', active: true },
+          { label: 'EVENT', art: 'events', to: '/events', badge: true },
+          { label: 'ADDA', art: 'voice', to: '/voice', tag: 'NEW' },
+          { label: 'INVENTORY', art: 'inventory', to: '/inventory' },
+          { label: 'SOCIAL', art: 'team', to: '/friends' },
+        ] as const).map((item) => (
           <Pressable
             key={item.label}
-            style={[styles.navItem, item.active && styles.navItemActive]}
-            onPress={() => !item.active && router.push(item.to as never)}
+            accessibilityRole="button"
+            accessibilityLabel={item.label}
+            style={[styles.navItem, 'active' in item && styles.navItemActive]}
+            onPress={() => { if (!('active' in item)) router.push(item.to) }}
           >
-            {item.tag && (
+            {'tag' in item && (
               <View style={styles.navTag}>
                 <Text style={styles.navTagText}>{item.tag}</Text>
               </View>
             )}
-            {item.badge && <View style={styles.navDot} />}
-            <Icon name={item.glyph} size={compact ? 20 : 23} color={item.active ? A.gold : '#cfe0ff'} />
-            <OutlineText size={compact ? 9 : 10} width={1.5} color={item.active ? A.gold : A.text} outline={A.textOutline}>
+            {'badge' in item && <View style={styles.navDot} />}
+            <ArcadeArt name={item.art} size={compact ? 24 : 27} />
+            <OutlineText size={compact ? 9 : 10} width={1.5} color={'active' in item ? A.gold : A.text} outline={A.textOutline}>
               {item.label}
             </OutlineText>
           </Pressable>
         ))}
       </View>
-    </View>
+      {avatarPickerOpen && <HomeAvatarPicker close={() => setAvatarPickerOpen(false)} />}
+    </HomeArtMotion>
   )
 }
 
@@ -322,6 +289,7 @@ const styles = StyleSheet.create({
 
   topBar: { backgroundColor: 'rgba(5,20,56,0.92)', borderBottomWidth: 2, borderBottomColor: A.barEdge, paddingBottom: 6 },
   topRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 6 },
+  topRowNarrow: { paddingHorizontal: 6, gap: 4 },
   avatarWrap: { width: 40, height: 40 },
   avatarRing: { width: 40, height: 40, borderRadius: 10, padding: 2.5 },
   avatarInner: {
@@ -367,6 +335,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   glyph: { fontSize: 15, color: '#dbe9ff' },
+  iconButtonNarrow: { width: 29 },
   badge: {
     position: 'absolute',
     top: -5,
@@ -389,9 +358,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cartNarrow: { width: 27 },
 
   hero: { flex: 1, position: 'relative', minHeight: 120 },
-  rail: { position: 'absolute', gap: 8, zIndex: 3 },
   brand: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   crown: { marginBottom: -10, zIndex: 2 },
   boardRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 4 },
@@ -443,6 +412,7 @@ const styles = StyleSheet.create({
     width: 54,
   },
   freeAdText: { fontFamily: NUMERIC, fontSize: 10, color: A.gold, includeFontPadding: false },
+  avatarShortcut: { minHeight: 52, justifyContent: 'center', gap: 1, backgroundColor: '#143f7d' },
 
   nav: {
     flexDirection: 'row',

@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Linking, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { CREW, VARSITY, type CharacterModel } from '../game/character'
-import { SEAT_HEX } from '../game/rules'
+import { CREW, DEFAULT_CHARACTER_MODEL } from '../game/character'
+import { SEAT_HEX, type Seat } from '../game/rules'
 import { cancelProvider, chooseAvatar, finishProvider, playAsGuest, startProvider, useAccount, type Provider } from '../net/account'
 import CharacterPreview from '../three/CharacterPreview'
 import SceneBoundary from '../three/SceneBoundary'
 import { Action, s } from '../ui/ArcadePage'
 import { Coin, Gem } from '../ui/ArcadeIcons'
 import Backdrop from '../ui/Backdrop'
-import BrandLockup from '../ui/BrandLockup'
+import ArcadeArt from '../ui/ArcadeArt'
+import { ArtAccent, HomeArtMotion, HomeBrand } from '../ui/HomeArt'
 
 function SignIn() {
+  const { width, height } = useWindowDimensions()
   const [busy, setBusy] = useState<Provider | 'guest' | 'finishing' | null>(null)
   const [message, setMessage] = useState('')
   const [waiting, setWaiting] = useState(false)
@@ -61,20 +64,26 @@ function SignIn() {
     }
   }
 
-  return <>
-    <View style={styles.brand}><BrandLockup scale={.65} /></View>
+  return <HomeArtMotion style={styles.signIn}>
+    <View style={styles.brand}><HomeBrand size={Math.min(width * .64, height * .29, 238)} /></View>
     <Text accessibilityRole="header" style={styles.title}>Welcome to the game</Text>
     <View style={[s.card, styles.bonus]}>
-      <Coin size={25} /><Text style={s.heading}>1,000 coins</Text>
-      <Gem size={25} /><Text style={s.heading}>10 diamonds</Text>
+      <View style={styles.reward}>
+        <ArtAccent group={0}><Coin size={26} /></ArtAccent>
+        <Text style={styles.rewardLabel}>1,000 coins</Text>
+      </View>
+      <View style={styles.reward}>
+        <ArtAccent group={2}><Gem size={25} /></ArtAccent>
+        <Text style={styles.rewardLabel}>10 diamonds</Text>
+      </View>
     </View>
     <Text style={[s.copy, styles.center]}>Free when you create your account.</Text>
     <View style={styles.buttons}>
-      <Action label="Sign in with Google" icon={<MaterialCommunityIcons name="google" size={17} color="#b73424" />}
+      <Action label="Sign in with Google" icon={<ArtAccent group={0}><MaterialCommunityIcons name="google" size={19} color="#a92f21" /></ArtAccent>}
         disabled={busy !== null || waiting} onPress={() => void signIn('google')} />
-      <Action label="Sign in with Facebook" icon={<MaterialCommunityIcons name="facebook" size={18} color="#1856b3" />}
+      <Action label="Sign in with Facebook" icon={<ArtAccent group={1}><MaterialCommunityIcons name="facebook" size={20} color="#1856b3" /></ArtAccent>}
         disabled={busy !== null || waiting} onPress={() => void signIn('facebook')} />
-      <Action label={busy === 'guest' ? 'Connecting…' : 'Play as a guest'} icon={<Text style={styles.guestEmoji}>👤</Text>}
+      <Action label={busy === 'guest' ? 'Connecting…' : 'Play as a guest'} secondary icon={<ArcadeArt name="lucky7" size={22} />}
         disabled={busy !== null || waiting} onPress={() => void signIn('guest')} />
       {waiting && <Pressable accessibilityRole="button" onPress={() => {
         void cancelProvider().then(() => {
@@ -84,11 +93,11 @@ function SignIn() {
       }}><Text style={[s.copy, styles.center]}>Cancel sign-in</Text></Pressable>}
     </View>
     {!!message && <Text accessibilityLiveRegion="polite" style={s.notice}>{message}</Text>}
-  </>
+  </HomeArtMotion>
 }
 
 function PickAvatar() {
-  const [model, setModel] = useState<CharacterModel>(VARSITY)
+  const [model, setModel] = useState<Seat>(DEFAULT_CHARACTER_MODEL)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -105,7 +114,10 @@ function PickAvatar() {
   }
 
   return <>
-    <Text accessibilityRole="header" style={styles.title}>Choose your avatar</Text>
+    <View style={[s.line, styles.options]}>
+      <ArcadeArt name="character" size={38} />
+      <Text accessibilityRole="header" style={styles.title}>Choose your avatar</Text>
+    </View>
     <Text style={[s.copy, styles.center]}>Your character will appear on the board when you play.</Text>
     <View style={styles.preview}>
       <SceneBoundary label="Avatar preview unavailable">
@@ -114,8 +126,8 @@ function PickAvatar() {
     </View>
     <View style={[s.line, styles.options]}>
       {CREW.map((name, index) => <Pressable key={name} accessibilityRole="radio"
-        accessibilityState={{ checked: index === model, disabled: busy }} disabled={busy} onPress={() => setModel(index as CharacterModel)}
-        style={[styles.choice, index === model && { borderColor: model === VARSITY ? '#ffc651' : SEAT_HEX[model], backgroundColor: '#254478' }]}>
+        accessibilityState={{ checked: index === model, disabled: busy }} disabled={busy} onPress={() => setModel(index as Seat)}
+        style={[styles.choice, index === model && { borderColor: SEAT_HEX[model], backgroundColor: '#254478' }]}>
         <Text style={s.copy}>{name}</Text>
       </Pressable>)}
     </View>
@@ -139,14 +151,16 @@ export default function Onboarding() {
 }
 
 const styles = StyleSheet.create({
-  guestEmoji: { fontSize: 15, includeFontPadding: false },
   root: { flex: 1, backgroundColor: '#102d5f' },
   safe: { flex: 1 },
   content: { flexGrow: 1, width: '100%', maxWidth: 460, alignSelf: 'center', justifyContent: 'center', gap: 14, padding: 20 },
+  signIn: { gap: 12 },
   brand: { alignItems: 'center' },
   title: { ...s.headerTitle, fontSize: 28, textAlign: 'center' },
   center: { textAlign: 'center' },
-  bonus: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  bonus: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, padding: 10, backgroundColor: '#0c244d', borderColor: '#756543' },
+  reward: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rewardLabel: { ...s.heading, fontSize: 16 },
   buttons: { gap: 10 },
   preview: { height: 265, borderRadius: 18, overflow: 'hidden', backgroundColor: '#0b1e38' },
   options: { justifyContent: 'center' },

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
+import { StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
+import Pressable from './SoundPressable'
 import { A } from '../theme'
 
 /** expo-linear-gradient requires at least two stops. */
@@ -88,6 +89,7 @@ export function GoldPanel({
   style,
   contentStyle,
   onPress,
+  accessibilityLabel,
   depth = 5,
   face = [A.panelTop, A.panelBot],
   rim = [A.goldLite, A.gold, A.goldMid],
@@ -98,6 +100,7 @@ export function GoldPanel({
   style?: StyleProp<ViewStyle>
   contentStyle?: StyleProp<ViewStyle>
   onPress?: () => void
+  accessibilityLabel?: string
   depth?: number
   face?: Gradient
   rim?: Gradient
@@ -148,6 +151,9 @@ export function GoldPanel({
   if (!onPress) return body
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: !!disabled }}
       onPress={disabled ? undefined : onPress}
       style={({ pressed }) => ({ transform: [{ translateY: pressed ? depth - 1 : 0 }], opacity: disabled ? 0.6 : 1 })}
     >
@@ -164,6 +170,7 @@ export function GoldBar({
   onPress,
   radius = 10,
   paddingVertical = 5,
+  labelShadow = false,
 }: {
   label: string
   size?: number
@@ -171,6 +178,7 @@ export function GoldBar({
   onPress?: () => void
   radius?: number
   paddingVertical?: number
+  labelShadow?: boolean
 }) {
   const bar = (
     <LinearGradient
@@ -190,9 +198,11 @@ export function GoldBar({
         style,
       ]}
     >
-      <OutlineText size={size} width={2} outline={A.goldShadow}>
-        {label}
-      </OutlineText>
+      {labelShadow ? (
+        <Text numberOfLines={1} style={[styles.barLabel, { fontSize: size, lineHeight: size * 1.3 }]}>{label}</Text>
+      ) : (
+        <OutlineText size={size} width={2} outline={A.goldShadow}>{label}</OutlineText>
+      )}
     </LinearGradient>
   )
 
@@ -288,6 +298,7 @@ export function CurrencyPill({
 }
 
 const styles = StyleSheet.create({
+  barLabel: { fontFamily: DISPLAY, color: A.text, textAlign: 'center', includeFontPadding: false, textShadowColor: A.goldShadow, textShadowOffset: { width: 0, height: 1.5 }, textShadowRadius: 2 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, Share, Text, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Action, s } from '../ui/ArcadePage'
 
-export default function VoiceLounge({ uri }: { uri: string }) {
+export default function VoiceLounge({ uri, speakerMuted }: { uri: string; speakerMuted?: boolean }) {
   const view = useRef<WebView<object>>(null)
   const [failed, setFailed] = useState(false)
+  const syncSpeaker = useCallback(() => {
+    if (speakerMuted === undefined) return
+    view.current?.injectJavaScript(
+      "document.dispatchEvent(new CustomEvent('voice-speaker', { detail: " + speakerMuted + " })); true;",
+    )
+  }, [speakerMuted])
+  useEffect(syncSpeaker, [syncSpeaker])
   useEffect(() => {
     const change = AppState.addEventListener('change', (state) => {
       if (state === 'background') view.current?.injectJavaScript("document.dispatchEvent(new Event('voice-background')); true;")
@@ -17,6 +24,7 @@ export default function VoiceLounge({ uri }: { uri: string }) {
     <Action label="Retry voice lounge" onPress={() => setFailed(false)} />
   </View>
   return <WebView<object> ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: '#0c2043' }}
+    onLoad={syncSpeaker}
     originWhitelist={['*']} setSupportMultipleWindows={false} allowsInlineMediaPlayback
     mediaPlaybackRequiresUserAction={false} mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
     onShouldStartLoadWithRequest={({ url }) => url === 'about:blank' || url.split('#')[0] === uri.split('#')[0]}

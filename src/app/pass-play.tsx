@@ -1,19 +1,18 @@
+import ArcadeArt from '../ui/ArcadeArt'
 import { useState } from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { StyleSheet, Text, TextInput, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { Action, ArcadePage, s } from '../ui/ArcadePage'
 import AvatarPicker from '../ui/AvatarPicker'
-import { CREW, type Character } from '../game/character'
+import type { Character } from '../game/character'
+import { characterName } from '../game/metapersonRoster'
 import { SEAT_COLORS, SEAT_HEX, type Seat } from '../game/rules'
 import { openTable } from '../game/localTable'
 import { useIdentity } from '../game/identity'
 import type { LocalVariant } from '../game/store'
+import { GAME_VARIANTS } from '../game/variants'
 
 const COLORS: Seat[] = [0, 1, 2, 3]
-const MODES = [
-  { id: 'classic', name: 'Normal', detail: 'Bring all four characters home.' },
-  { id: 'teams', name: 'Team Up', detail: 'Four players. Both partners must finish.' },
-  { id: 'quick', name: 'Quick', detail: 'First character home wins.' },
-] as const
 
 export default function PassPlay() {
   const nickname = useIdentity(state => state.name)
@@ -42,7 +41,7 @@ export default function PassPlay() {
     })), undefined, variant)
   }
 
-  return <ArcadePage key={step} title="Pass & play" onBack={step === 2 ? () => setStep(1) : undefined}
+  return <ArcadePage key={step} title="Pass & play" art="passPlay" onBack={step === 2 ? () => setStep(1) : undefined}
     footer={step === 1 ? <Action label="Next" onPress={() => setStep(2)} /> : <Action label="Play" onPress={startMatch} />}>
     {step === 1 ? <>
       <View style={s.card}>
@@ -51,10 +50,12 @@ export default function PassPlay() {
       </View>
       <View style={s.card}>
         <Text style={s.heading}>Select game</Text>
-        {MODES.map(mode => <Pressable key={mode.id} accessibilityRole="radio" accessibilityState={{ checked: variant === mode.id }}
+        {GAME_VARIANTS.map(mode => <Pressable key={mode.id} accessibilityRole="radio" accessibilityState={{ checked: variant === mode.id }}
           onPress={() => setVariant(mode.id)} style={[styles.option, variant === mode.id && styles.selected]}>
-          <Text style={s.heading}>{mode.name}</Text>
-          <Text style={s.copy}>{mode.detail}</Text>
+          <View style={s.line}>
+            <ArcadeArt name={mode.id === 'teams' ? 'team' : mode.id === 'quick' ? 'lucky7' : 'board'} size={38} />
+            <View style={{ flex: 1 }}><Text style={s.heading}>{mode.name}</Text><Text style={s.copy}>{mode.detail}</Text></View>
+          </View>
         </Pressable>)}
       </View>
     </> : <>
@@ -84,7 +85,7 @@ export default function PassPlay() {
               <Pressable accessibilityRole="button" accessibilityLabel={'Select avatar for Player ' + (index + 1)}
                 accessibilityState={{ expanded: avatarPicker === index }}
                 onPress={() => setAvatarPicker(previous => previous === index ? null : index)} style={styles.option}>
-                <Text style={s.copy}>{character.avatarId ? 'My avatar' : CREW[character.model]} {avatarPicker === index ? '▴' : '▾'}</Text>
+                <Text style={s.copy}>{characterName(character)} {avatarPicker === index ? '▴' : '▾'}</Text>
               </Pressable>
             </View>
             {avatarPicker === index && renderAvatarPicker(index)}

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { isCharacter, type Character } from './character'
+import { isCharacter, replaceRetiredCharacter, type Character } from './character'
 
 /**
  * Who this device is in an online room. No account and no password — a random
@@ -48,7 +48,7 @@ export const useIdentity = create<Identity>()(
       partialize: (s) => ({ playerId: s.playerId, name: s.name, named: s.named, character: s.character }),
       merge: (saved, current) => {
         const previous = saved as Partial<Identity> | null
-        return { ...current, ...previous, character: isCharacter(previous?.character) ? previous.character : null }
+        return { ...current, ...previous, character: isCharacter(previous?.character) ? replaceRetiredCharacter(previous.character) : null }
       },
       onRehydrateStorage: () => (state) => {
         // Mark hydration so the net layer waits for the persisted id rather

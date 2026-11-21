@@ -5,13 +5,13 @@ import { createURL } from 'expo-linking'
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
 import { create } from 'zustand'
-import { type CharacterModel } from '../game/character'
+import { replaceRetiredCharacter, type CharacterModel } from '../game/character'
 import { identityReady, useIdentity } from '../game/identity'
 import { useProfile } from '../game/profile'
 import { SERVER_URL } from './config'
 
 export type Provider = 'google' | 'facebook'
-type Account = { id: string; name: string; coins: number; diamonds: number; avatar: CharacterModel | null }
+type Account = { id: string; provider?: Provider | 'guest'; name: string; coins: number; diamonds: number; avatar: CharacterModel | null }
 type Session = { token: string; account: Account }
 
 const sessionKey = 'cgp.account-session'
@@ -54,11 +54,29 @@ async function request<T>(path: string, options: { method?: string; data?: objec
 
 export const useAccount = create<{ session: Session | null; ready: boolean }>(() => ({ session: null, ready: false }))
 let restoration: Promise<void> | undefined
+let onlineBalanceRequest = 0
+
+export async function refreshOnlineCoins() {
+  const session = useAccount.getState().session
+  if (!session) return
+  const generation = ++onlineBalanceRequest
+  try {
+    const account = await request<Account>('me', { token: session.token })
+    const latest = useAccount.getState().session
+    if (latest?.token === session.token && generation === onlineBalanceRequest) {
+      useAccount.setState({ session: { ...latest, account: { ...latest.account, coins: account.coins } } })
+    }
+  } catch {
+    // Entry is validated against the current balance on the server.
+  }
+}
 
 async function activate(session: Session) {
   const identity = await identityReady()
   if (!useProfile.persist.hasHydrated()) await useProfile.persist.rehydrate()
   const { account } = session
+  const sameAccount = identity.playerId === account.id
+  const name = sameAccount && (identity.named || account.provider !== 'google') ? identity.name : account.name
   if (useProfile.getState().accountId !== account.id) {
     useProfile.setState({
       ...useProfile.getInitialState(),
@@ -66,13 +84,15 @@ async function activate(session: Session) {
       coins: account.coins, gems: account.diamonds, nextChestAt: Date.now(),
     })
   }
-  if (identity.playerId !== account.id || (!identity.character && account.avatar !== null)) {
+  if (!sameAccount || (!identity.character && account.avatar !== null)) {
     useIdentity.setState({
       playerId: account.id,
-      name: identity.playerId === account.id ? identity.name : account.name,
-      named: identity.playerId === account.id && identity.named,
-      character: account.avatar === null ? null : { model: account.avatar },
+      name,
+      named: sameAccount && identity.named,
+      character: account.avatar === null ? null : replaceRetiredCharacter({ model: account.avatar }),
     })
+  } else if (identity.name !== name) {
+    useIdentity.setState({ name })
   }
   useAccount.setState({ session })
 }

@@ -1,9 +1,10 @@
 import { io, type Socket } from 'socket.io-client'
 import { create } from 'zustand'
 import { SERVER_URL } from './config'
-import { useAccount } from './account'
+import { refreshOnlineCoins, useAccount } from './account'
+import type { CoinEntry } from '../game/matchEntry'
 import { identityReady, useIdentity } from '../game/identity'
-import { useMatch, type PlayerConfig, type Phase } from '../game/store'
+import { useMatch, type LocalVariant, type PlayerConfig, type Phase } from '../game/store'
 import type { Seat, Token } from '../game/rules'
 import { isCharacter, type Character } from '../game/character'
 import { REACTIONS, type ReactionKind, type ReactionRequest } from '../game/reactions'
@@ -27,6 +28,9 @@ export interface RoomMember {
 
 export interface RoomSnapshot {
   publicTable?: boolean
+  entry?: number
+  prize?: number
+  variant?: LocalVariant
   code: string
   hostId: string
   phase: 'lobby' | 'playing' | 'finished'
@@ -50,12 +54,12 @@ interface Ack {
   ticket?: string
 }
 
-export async function requestMatchVoice() {
+export async function requestMatchVoice(startMic: boolean) {
   const ack = await emitAck('match:voice')
   if (!ack.ok || !ack.ticket || !/^[A-Za-z0-9_-]{32}$/.test(ack.ticket)) {
     throw Error(ack.error ?? 'Match voice is unavailable on this server.')
   }
-  return SERVER_URL + '/voice/#match=' + encodeURIComponent(ack.ticket)
+  return SERVER_URL + '/voice/#match=' + encodeURIComponent(ack.ticket) + '&auto=1' + (startMic ? '&mic=1' : '')
 }
 
 interface OnlineState {
@@ -66,9 +70,10 @@ interface OnlineState {
 
   connect: () => Promise<void>
   disconnect: () => void
-  createRoom: (publicTable?: boolean) => Promise<boolean>
+  createRoom: (publicTable: boolean, entry: CoinEntry) => Promise<boolean>
   joinRoom: (code: string) => Promise<boolean>
   setReady: (ready: boolean) => void
+  setVariant: (variant: LocalVariant) => Promise<void>
   startMatch: () => Promise<boolean>
   leaveRoom: () => void
   clearError: () => void
@@ -135,6 +140,7 @@ export const useOnline = create<OnlineState>((set, get) => {
 
     useMatch.getState().attachServer({
       players: playersFrom(room),
+      variant: room.variant ?? 'classic',
       mySeat,
       roll: () => socket?.emit('match:roll', {}),
       move: (tokenId: string) => socket?.emit('match:move', { tokenId }),
@@ -175,6 +181,7 @@ export const useOnline = create<OnlineState>((set, get) => {
           const id = useIdentity.getState()
           socket?.emit('identify', identification())
           set({ status: 'connected', error: null })
+          void refreshOnlineCoins()
 
           // Re-enter the room after a drop so a flaky network does not end the match.
           const code = get().room?.code
@@ -183,6 +190,7 @@ export const useOnline = create<OnlineState>((set, get) => {
         })
 
         socket.on('disconnect', () => set({ status: 'reconnecting' }))
+        socket.on('wallet:changed', () => { void refreshOnlineCoins() })
         socket.on('match:reaction', (event: (ReactionRequest & { roomCode: string }) | null) => {
           if (!event || event.roomCode !== get().room?.code || !REACTIONS.some(item => item.id === event.kind)) return
           for (const listener of reactionListeners) listener(event)
@@ -211,8 +219,8 @@ export const useOnline = create<OnlineState>((set, get) => {
           bindMatch(room)
         })
 
-        socket.on('match:rolled', (event: { die: number }) => {
-          useMatch.getState().applyServerRoll(event.die)
+        socket.on('match:rolled', (event: { die: number; seat?: Seat }) => {
+          useMatch.getState().applyServerRoll(event.die, event.seat)
         })
 
         socket.on(
@@ -240,13 +248,19 @@ export const useOnline = create<OnlineState>((set, get) => {
       socket.emit('identify', identification())
     },
 
-    createRoom: async (publicTable = false) => {
+    createRoom: async (publicTable, entry) => {
       set({ busy: true, error: null })
       await get().connect()
-      const ack = await emitAck(publicTable ? 'room:quick' : 'room:create', { character: useIdentity.getState().character })
+      const ack = await emitAck(publicTable ? 'room:quick' : 'room:create', { entry, character: useIdentity.getState().character })
       set({ busy: false })
       if (!ack.ok) {
+        void refreshOnlineCoins()
         set({ error: ack.error ?? 'Could not create the room' })
+        return false
+      }
+      if (ack.snapshot?.entry !== entry) {
+        get().disconnect()
+        set({ error: 'This server could not open a table at the selected entry.' })
         return false
       }
       if (ack.snapshot) set({ room: ack.snapshot })
@@ -259,6 +273,7 @@ export const useOnline = create<OnlineState>((set, get) => {
       const ack = await emitAck('room:join', { code: code.trim(), character: useIdentity.getState().character })
       set({ busy: false })
       if (!ack.ok) {
+        void refreshOnlineCoins()
         set({ error: ack.error ?? 'Could not join' })
         return false
       }
@@ -267,12 +282,21 @@ export const useOnline = create<OnlineState>((set, get) => {
     },
 
     setReady: (ready) => socket?.emit('room:ready', { ready }),
+    setVariant: async (variant) => {
+      const code = get().room?.code
+      set({ busy: true, error: null })
+      const ack = await emitAck('room:variant', { variant })
+      if (get().room?.code !== code) return
+      set({ busy: false, ...(ack.snapshot ? { room: ack.snapshot } : {}),
+        ...(ack.ok ? {} : { error: ack.error ?? 'Could not change the game mode' }) })
+    },
 
     startMatch: async () => {
       set({ busy: true, error: null })
       const ack = await emitAck('room:start')
       set({ busy: false })
       if (!ack.ok) {
+        void refreshOnlineCoins()
         set({ error: ack.error ?? 'Could not start' })
         return false
       }
@@ -282,7 +306,7 @@ export const useOnline = create<OnlineState>((set, get) => {
     leaveRoom: () => {
       socket?.emit('room:leave')
       useMatch.getState().detachServer()
-      set({ room: null, error: null })
+      set({ room: null, busy: false, error: null })
     },
 
     disconnect: () => {

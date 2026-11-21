@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { requestRecordingPermissionsAsync } from 'expo-audio'
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Linking, Platform, StyleSheet, Text, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { requestMatchVoice } from '../net/online'
 import VoiceLounge from './VoiceLounge'
 
-export default function MatchVoice() {
+export default function MatchVoice({ speakerMuted }: { speakerMuted: boolean }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [permission, setPermission] = useState<'checking' | 'granted' | 'denied' | 'blocked'>(
@@ -13,14 +14,16 @@ export default function MatchVoice() {
   useEffect(() => {
     let active = true
     async function connectVoice() {
+      let canSpeak = Platform.OS === 'web'
       if (Platform.OS !== 'web') {
         // This panel mounts when a player taps the microphone in the match.
         const result = await requestRecordingPermissionsAsync().catch(() => null)
         if (!active) return
+        canSpeak = result?.granted === true
         setPermission(result?.granted ? 'granted' : result?.canAskAgain === false ? 'blocked' : 'denied')
       }
       try {
-        const value = await requestMatchVoice()
+        const value = await requestMatchVoice(canSpeak)
         if (active) setUrl(value)
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : 'Voice is unavailable.')
@@ -31,7 +34,7 @@ export default function MatchVoice() {
   }, [])
   return <View>
     <View style={styles.panel}>
-      {url && permission !== 'checking' ? <VoiceLounge uri={url} /> : <Text accessibilityLiveRegion="polite" style={styles.status}>
+      {url && permission !== 'checking' ? <VoiceLounge uri={url} speakerMuted={speakerMuted} /> : <Text accessibilityLiveRegion="polite" style={styles.status}>
         {error || 'Preparing match voice…'}
       </Text>}
     </View>

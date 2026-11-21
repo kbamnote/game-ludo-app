@@ -1,5 +1,7 @@
+import ArcadeArt from '../ui/ArcadeArt'
 import { useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import type { Character } from '../game/character'
 import { useIdentity } from '../game/identity'
 import { practice } from '../game/localTable'
@@ -14,12 +16,13 @@ export default function Computer() {
   const [selection, setSelection] = useState<Character | undefined>()
   const character = selection ?? equipped ?? { model: 0 }
 
-  return <ArcadePage title="Play with computer" footer={<Action label="Play" onPress={() => practice(count, character)} />}>
+  return <ArcadePage title="Play with computer" art="computer" footer={<Action label="Play" onPress={() => practice(count, character)} />}>
     <View style={s.card}>
       <Text accessibilityRole="header" style={s.heading}>How many players?</Text>
       <View style={s.line}>
         {counts.map(size => <Pressable key={size} accessibilityRole="radio" accessibilityState={{ checked: count === size }}
           onPress={() => setCount(size)} style={[styles.option, count === size && styles.selected]}>
+          <ArcadeArt name={size === 2 ? "friends" : "team"} size={42} />
           <Text style={s.heading}>{size} players</Text>
           <Text style={s.copy}>{size === 2 ? 'You vs 1 bot' : 'You vs 3 bots'}</Text>
         </Pressable>)}

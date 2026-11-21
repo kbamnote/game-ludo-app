@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Image, Platform, Pressable, Text, View } from 'react-native'
+import { Image, Platform, Text, View } from 'react-native'
+import Pressable from './SoundPressable'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { launchImageLibraryAsync, type ImagePickerAsset } from 'expo-image-picker'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'

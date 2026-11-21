@@ -1,13 +1,16 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { Platform } from 'react-native'
 import { Asset } from 'expo-asset'
-import { setAudioModeAsync, useAudioPlayer, type AudioPlayer } from 'expo-audio'
-import { CORONATION_MS, type Coronation } from './coronation'
-import { LOCAL_DICE_ROLL_MS, ONLINE_DICE_ROLL_MS, STEP_MS } from './moveTiming'
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from 'expo-audio'
+import { useFocusEffect } from 'expo-router'
+import { coronationDuration, type Coronation } from './coronation'
+import { ONLINE_DICE_ROLL_MS, RESCUE_ARRIVAL_MS, RESCUE_HOME_MS, RESCUE_MS, STEP_MS } from './moveTiming'
 import type { Reaction, ReactionKind } from './reactions'
-import { useMatch, type MoveAnimation } from './store'
+import { matchTime, useMatch, type MoveAnimation } from './store'
+import { AMBULANCE_SOUND, soundAsset } from './soundboard'
 
 const REACTION_SOUND_MS = 2100
+const SIREN_LEAD_IN_SECONDS = .55
 const REACTION_SOUNDS: Record<ReactionKind, number> = {
   knife: require('../../assets/sounds/reaction-knife.wav'),
   heart: require('../../assets/sounds/reaction-heart.wav'),
@@ -34,8 +37,8 @@ export function useMatchAudio(muted: boolean, reaction: Reaction | null, coronat
 
   useEffect(() => {
     if (muted || !coronation) return
-    const elapsed = Math.max(0, Date.now() - coronation.startedAt)
-    if (elapsed >= CORONATION_MS) return
+    const elapsed = Math.max(0, matchTime() - coronation.startedAt)
+    if (elapsed >= coronationDuration(coronation.place)) return
     let active = true
     void band.seekTo(elapsed / 1000).then(() => { if (active) band.play() }).catch(() => {})
     return () => { active = false; band.pause() }
@@ -82,21 +85,21 @@ export function useMatchAudio(muted: boolean, reaction: Reaction | null, coronat
       if (!animation) return
       const { startedAt, path, captures } = animation
       function at(player: AudioPlayer, offset: number) {
-        const delay = startedAt + offset - Date.now()
-        if (delay < 0) return
-        timers.push(setTimeout(() => play(player), delay))
+        const delay = startedAt + offset - matchTime()
+        if (delay < -60) return
+        timers.push(setTimeout(() => play(player), Math.max(0, delay)))
       }
-      // Walking reaches each tile just before the step changes in the scene.
-      path.forEach((_, index) => at(step, (index + 1) * STEP_MS - 24))
+      // Play within each step so a final frame and its idle snapshot cannot
+      // cancel the footfall when the JS thread is busy rendering an online move.
+      path.forEach((_, index) => at(step, index * STEP_MS + 90))
       if (captures.length) at(capture, path.length * STEP_MS)
     }
 
     scheduleMove(useMatch.getState().animation)
     const unsubscribe = useMatch.subscribe((state, previous) => {
       if (state.animation !== previous.animation) scheduleMove(state.animation)
-      const onlineRoll = state.lastServerRoll && state.lastServerRoll !== previous.lastServerRoll
-      if (onlineRoll || (state.phase === 'rolling' && previous.phase !== 'rolling')) {
-        roll.setPlaybackRate(onlineRoll ? 1 : ONLINE_DICE_ROLL_MS / LOCAL_DICE_ROLL_MS)
+      if (state.lastRoll && state.lastRoll !== previous.lastRoll) {
+        roll.setPlaybackRate(ONLINE_DICE_ROLL_MS / state.lastRoll.duration)
         play(roll)
       } else if (state.phase === 'ended' && previous.phase !== 'ended' && !state.coronation) {
         play(win)
@@ -108,4 +111,37 @@ export function useMatchAudio(muted: boolean, reaction: Reaction | null, coronat
       unsubscribe()
     }
   }, [muted, coronation, roll, step, capture, win])
+}
+
+export function RescueAudio({ rescue, muted }: { rescue: MoveAnimation | null; muted: boolean }) {
+  // Keep the siren ready before a capture and give it its own player.
+  const siren = useAudioPlayer(soundAsset(AMBULANCE_SOUND), { downloadFirst: true })
+  const { isLoaded } = useAudioPlayerStatus(siren)
+  useFocusEffect(useCallback(() => {
+    if (!rescue || muted || !isLoaded) return
+    const walkEnd = rescue.startedAt + rescue.path.length * STEP_MS
+    const now = matchTime()
+    const timers: ReturnType<typeof setTimeout>[] = []
+    let active = true
+    rescue.captures.forEach((_, index) => {
+      const rescueStart = walkEnd + index * RESCUE_MS
+      const startsAt = rescueStart + RESCUE_ARRIVAL_MS
+      const endsAt = rescueStart + RESCUE_HOME_MS
+      if (endsAt <= now) return
+      timers.push(setTimeout(() => {
+        const elapsed = matchTime() - startsAt
+        if (matchTime() >= endsAt || useMatch.getState().animation !== rescue) return
+        void siren.seekTo(SIREN_LEAD_IN_SECONDS + Math.max(0, elapsed) / 1000).then(() => {
+          if (active && matchTime() < endsAt && useMatch.getState().animation === rescue) siren.play()
+        }).catch(() => {})
+      }, Math.max(0, startsAt - now)))
+      timers.push(setTimeout(() => siren.pause(), endsAt - now))
+    })
+    return () => {
+      active = false
+      timers.forEach(clearTimeout)
+      siren.pause()
+    }
+  }, [isLoaded, muted, rescue, siren]))
+  return null
 }

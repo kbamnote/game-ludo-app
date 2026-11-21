@@ -5,7 +5,7 @@ import { BADGES, useProfile } from '../game/profile'
 
 export default function Inventory() {
   const { coins, gems, badge, ownedBadges, equipBadge } = useProfile()
-  return <ArcadePage title="Inventory">
+  return <ArcadePage title="Inventory" art="inventory">
     <View style={[s.card, s.line]}><Coin /><Text style={s.heading}>{coins.toLocaleString()}</Text><Gem /><Text style={s.heading}>{gems.toLocaleString()}</Text></View>
     <Text style={s.heading}>Lobby pawns</Text>
     <Text style={s.copy}>Equip a pawn for your home avatar. Unlocked colours stay in your collection.</Text>

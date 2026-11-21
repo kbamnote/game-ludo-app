@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native'
+import { StyleSheet, Text, View, type ViewStyle } from 'react-native'
+import Pressable from './SoundPressable'
 import Icon from './Icon'
 import { C, F, R, T } from '../theme'
 

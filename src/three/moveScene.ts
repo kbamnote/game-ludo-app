@@ -1,5 +1,5 @@
 import type { MoveAnimation } from '../game/store'
-import { CORONATION_MS, PODIUM_HEIGHT } from '../game/coronation'
+import { coronationDuration, PODIUM_HEIGHT } from '../game/coronation'
 import { cellFor, cellForProgress, YARD, type Token } from '../game/rules'
 import { RESCUE_ARRIVAL_MS, RESCUE_HOME_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
 import { toWorld } from './layout'
@@ -10,8 +10,9 @@ export function ease(t: number, a: number, b: number) {
 }
 const mix = (a: number, b: number, u: number) => a + (b - a) * u
 
-export function coronationFrame(elapsed: number) {
-  const exit = ease(elapsed, CORONATION_MS - 760, CORONATION_MS)
+export function coronationFrame(elapsed: number, place: 1 | 2) {
+  const duration = coronationDuration(place)
+  const exit = ease(elapsed, duration - 760, duration)
   return {
     march: ease(elapsed, 120, 3040),
     approach: ease(elapsed, 2170, 4160),
@@ -20,6 +21,8 @@ export function coronationFrame(elapsed: number) {
     lift: PODIUM_HEIGHT * ease(elapsed, 5530, 6850) * (1 - exit),
     focus: ease(elapsed, 0, 850) * (1 - exit),
     portrait: ease(elapsed, 4100, 6550),
+    throne: place === 1 ? ease(elapsed, 7060, 7570) * (1 - exit) : 0,
+    sit: place === 1 ? ease(elapsed, 7390, 8140) * (1 - exit) : 0,
     exit,
   }
 }

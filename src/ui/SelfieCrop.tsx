@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Image, StyleSheet, Text, View } from 'react-native'
+import Pressable from './SoundPressable'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import { File } from 'expo-file-system'
 import { fromByteArray, toByteArray } from 'base64-js'

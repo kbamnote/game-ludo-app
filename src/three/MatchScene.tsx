@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { cellFor, HOME_STEP, SEAT_HEX, type Seat, type Token } from '../game/rules'
 import { CORONATION_YAW, type Coronation } from '../game/coronation'
 import { RESCUE_MS, STEP_MS } from '../game/moveTiming'
-import { useMatch, type MoveAnimation } from '../game/store'
+import { matchTime, useMatch, type MoveAnimation } from '../game/store'
 import { useIdentity } from '../game/identity'
 import Board3D, { useYardGlow } from './Board3D'
 import Coronation3D from './Coronation3D'
@@ -38,26 +38,30 @@ function AnimatedToken({ token, move, selectable, reaction, danceStartedAt, awar
   const restScale = token.progress === HOME_STEP ? FINISHED_TOKEN_SCALE : 1
   const victimIndex = move?.captures.indexOf(token.id) ?? -1
   const site = useMemo(() => victimIndex >= 0 ? rescueSite(token) : null, [token, victimIndex])
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const g = group.current
     if (!g) return
     const p = pose.current
     p.clip = 'Idle'
-    p.seconds = clock.elapsedTime + token.index * .31
+    p.seconds = (matchTime() - useMatch.getState().startedAt) / 1000 + token.index * .31
+    p.sit = 0
     g.position.set(rest[0], DECK_Y + .07, rest[1])
     g.scale.setScalar(restScale)
     g.rotation.set(0, .48, 0, 'YXZ')
     g.visible = true
     if (award) {
-      const t = Date.now() - award.startedAt
+      const t = matchTime() - award.startedAt
+      const frame = coronationFrame(t, award.place)
       if (award.tokenId !== token.id) {
-        g.visible = t < 5600 || t > 7900
+        g.visible = t < 5600 || frame.exit > .05
         return
       }
-      const frame = coronationFrame(t)
       const stage = frame.approach * (1 - frame.exit)
-      g.position.set(rest[0] * (1 - stage), DECK_Y + .07 + frame.lift, rest[1] * (1 - stage))
+      const back = .31 * frame.sit
+      g.position.set(rest[0] * (1 - stage) - Math.sin(CORONATION_YAW) * back, DECK_Y + .07 + frame.lift,
+        rest[1] * (1 - stage) - Math.cos(CORONATION_YAW) * back)
       g.scale.setScalar(THREE.MathUtils.lerp(restScale, 1, stage))
+      p.sit = frame.sit
       const walking = t >= 2170 && t < 4160
       g.rotation.y = walking ? Math.atan2(-rest[0], -rest[1]) : CORONATION_YAW
       if (walking) { p.clip = 'Walk'; p.seconds = t / 520 }
@@ -86,7 +90,7 @@ function AnimatedToken({ token, move, selectable, reaction, danceStartedAt, awar
       }
     }
     if (!move) return
-    const elapsed = Math.max(0, Date.now() - move.startedAt)
+    const elapsed = Math.max(0, matchTime() - move.startedAt)
     if (move.tokenId === token.id) {
       const walk = walkingPose(token, move, elapsed)
       const after = (elapsed - move.path.length * STEP_MS) / 1000
@@ -204,7 +208,7 @@ function CameraRig({ view, setTapHandler, reaction, danceStartedAt }: Pick<Retur
       width += (Math.max(8.2, 5.2 * aspect) - width) * follow
     }
     if (move?.captures.length) {
-      const elapsed = Date.now() - move.startedAt
+      const elapsed = matchTime() - move.startedAt
       const index = Math.max(0, Math.min(move.captures.length - 1,
         Math.floor((elapsed - move.path.length * STEP_MS) / RESCUE_MS)))
       const victim = move.before.find(token => token.id === move.captures[index])
@@ -224,15 +228,15 @@ function CameraRig({ view, setTapHandler, reaction, danceStartedAt }: Pick<Retur
       }
     }
     if (award) {
-      const t = Date.now() - award.startedAt
-      const frame = coronationFrame(t)
+      const t = matchTime() - award.startedAt
+      const frame = coronationFrame(t, award.place)
       const approach = ease(t, 500, 3100)
       const { focus, portrait } = frame
-      const targetY = DECK_Y + .75 + frame.lift + .35 * portrait
+      const targetY = DECK_Y + .75 + frame.lift + .35 * portrait - .18 * frame.sit
       const targetPitch = THREE.MathUtils.lerp(.73, .025, portrait)
       lookY = THREE.MathUtils.lerp(lookY, targetY, focus)
       height = THREE.MathUtils.lerp(height, targetY + 19 * Math.tan(targetPitch), focus)
-      const angleDelta = CORONATION_YAW - angle
+      const angleDelta = CORONATION_YAW + .29 * frame.sit - angle
       angle += focus * Math.atan2(Math.sin(angleDelta), Math.cos(angleDelta))
       x *= 1 - focus
       z *= 1 - focus

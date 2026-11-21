@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { Image, Modal, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native'
+import { Image, Modal, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native'
+import Pressable from './SoundPressable'
 import { REACTIONS, type ReactionKind } from '../game/reactions'
 import { C, F } from '../theme'
 import { Action, s } from './ArcadePage'

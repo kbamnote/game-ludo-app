@@ -20,6 +20,7 @@ export interface Profile {
   ownedBadges: string[]
   badge: string
   animateWheel: boolean
+  soundMuted: boolean
   cupWins: number
   seasonPoints: number
   claimedMilestones: number[]
@@ -27,10 +28,11 @@ export interface Profile {
   cupRound: number
   lastCupMatch: number
   spinWheel: () => number | null
-  rollLucky: (guess: LuckyGuess) => { dice: [number, number]; reward: number } | null
+  rollLucky: (guess: LuckyGuess, stake?: number) => { dice: [number, number]; stake: number; reward: number } | null
   equipBadge: (id: string) => boolean
   finishCupRound: (round: number, matchId: number, won: boolean) => void
   toggleWheel: () => void
+  setSoundMuted: (muted: boolean) => void
 
   addCoins: (n: number) => void
   addGems: (n: number) => void
@@ -42,6 +44,7 @@ const CHEST_COOLDOWN = 3 * 60 * 60 * 1000
 export const SPIN_COOLDOWN = 24 * 60 * 60 * 1000
 export const WHEEL_PRIZES = [100, 250, 75, 500, 150, 300]
 export type LuckyGuess = 'Under 7' | 'Exactly 7' | 'Over 7'
+export const LUCKY_PAYOUTS: Record<LuckyGuess, number> = { 'Under 7': 2, 'Exactly 7': 5, 'Over 7': 2 }
 export const BADGES = [
   { id: 'sapphire', name: 'Sapphire', color: '#55b9ff', dark: '#174588', price: 0 },
   { id: 'ruby', name: 'Ruby', color: '#ff6780', dark: '#8d203f', price: 300 },
@@ -69,6 +72,7 @@ export const useProfile = create<Profile>()(
       ownedBadges: ['sapphire'],
       badge: 'sapphire',
       animateWheel: true,
+      soundMuted: false,
       cupWins: 0,
       seasonPoints: 0,
       claimedMilestones: [],
@@ -106,16 +110,20 @@ export const useProfile = create<Profile>()(
         set({ lastSpinAt: Date.now(), lastSpinPrize: prize, coins: state.coins + prize, luckyRolls: state.luckyRolls + 1, seasonPoints: state.seasonPoints + 1 })
         return index
       },
-      rollLucky: (guess) => {
+      rollLucky: (guess, stake = 0) => {
         const state = get()
-        if (!state.luckyRolls) return null
+        if (!Number.isSafeInteger(stake) || stake < 0 || stake > state.coins) return null
+        if (stake === 0 && state.luckyRolls < 1) return null
+        const payout = stake === 0 ? (guess === 'Exactly 7' ? 300 : 100) : stake * LUCKY_PAYOUTS[guess]
+        if (!Number.isSafeInteger(payout) || !Number.isSafeInteger(state.coins - stake + payout)) return null
         const face = () => Math.floor(Math.random() * 6) + 1
         const dice: [number, number] = [face(), face()]
         const sum = dice[0] + dice[1]
         const result: LuckyGuess = sum < 7 ? 'Under 7' : sum > 7 ? 'Over 7' : 'Exactly 7'
-        const reward = result === guess ? (sum === 7 ? 300 : 100) : 0
-        set({ coins: state.coins + reward, luckyRolls: state.luckyRolls - 1, seasonPoints: state.seasonPoints + 1 })
-        return { dice, reward }
+        const reward = result === guess ? payout : 0
+        const coins = state.coins - stake + reward
+        set({ coins, luckyRolls: state.luckyRolls - Number(stake === 0), seasonPoints: state.seasonPoints + 1 })
+        return { dice, stake, reward }
       },
       equipBadge: (id) => {
         const item = BADGES.find((b) => b.id === id)
@@ -136,6 +144,7 @@ export const useProfile = create<Profile>()(
           seasonPoints: state.seasonPoints + Number(won) })
       },
       toggleWheel: () => set({ animateWheel: !get().animateWheel }),
+      setSoundMuted: soundMuted => set({ soundMuted }),
     }),
     {
       name: 'ludo-after-dark-profile',

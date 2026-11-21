@@ -1,8 +1,9 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber/native'
 import * as T from 'three'
-import { type Coronation } from '../game/coronation'
+import { coronationDuration, CORONATION_YAW, THRONE_SEAT_HEIGHT, type Coronation } from '../game/coronation'
 import { SEAT_HEX } from '../game/rules'
+import { matchTime } from '../game/store'
 import { DECK_Y } from './layout'
 import { coronationFrame, ease } from './moveScene'
 import { createMedic, disposeRescueRig } from './rescueModels'
@@ -33,6 +34,38 @@ function scalpHeight(winner: T.Object3D, sample: T.Vector3) {
     }
   })
   return top
+}
+
+function buildThrone(gold: T.Material, velvet: T.Material, jewel: T.Material) {
+  const throne = new T.Group()
+  throne.name = 'winner-throne'
+  throne.rotation.y = CORONATION_YAW
+  throne.visible = false
+  const arch = new T.Shape()
+  arch.moveTo(-.54, 0)
+  arch.lineTo(-.54, .82)
+  arch.quadraticCurveTo(-.54, 1.06, 0, 1.18)
+  arch.quadraticCurveTo(.54, 1.06, .54, .82)
+  arch.lineTo(.54, 0)
+  arch.closePath()
+  const backOptions = { depth: .083, bevelThickness: .035, bevelSize: .035, bevelSegments: 2, curveSegments: 9 }
+  add(throne, new T.ExtrudeGeometry(arch, backOptions), gold, 0, .48, -.79)
+  add(throne, new T.ExtrudeGeometry(arch, backOptions), velvet, 0, .55, -.72).scale.set(.83, .86, .56)
+  add(throne, new T.BoxGeometry(1.19, .13, .94), gold, 0, .36, -.34)
+  add(throne, new T.BoxGeometry(1.06, .082, .85), velvet, 0, THRONE_SEAT_HEIGHT - .041, -.32)
+  for (const side of [-1, 1]) {
+    for (const z of [-.68, .047]) add(throne, new T.CylinderGeometry(.068, .10, .333, 9), gold, side * .51, .1665, z)
+    add(throne, new T.CylinderGeometry(.052, .074, .26, 9), gold, side * .61, .60, .051)
+    add(throne, new T.CapsuleGeometry(.066, .61, 3, 10), gold, side * .59, .74, -.257).rotation.x = Math.PI / 2
+    add(throne, new T.SphereGeometry(.082, 12, 8), gold, side * .59, .74, .088)
+    add(throne, new T.SphereGeometry(.087, 12, 8), gold, side * .49, 1.44, -.74)
+    for (const y of [.74, .98, 1.19]) {
+      add(throne, new T.SphereGeometry(.027, 8, 6), gold, side * .255, y, -.642)
+    }
+  }
+  add(throne, new T.OctahedronGeometry(.105), gold, 0, 1.68, -.74).scale.set(1.1, 1.35, .65)
+  add(throne, new T.OctahedronGeometry(.055), jewel, 0, 1.68, -.655)
+  return throne
 }
 
 function makeRoyals(award: Coronation) {
@@ -123,17 +156,20 @@ function makeRoyals(award: Coronation) {
   add(podium, new T.CylinderGeometry(.594, .594, .035, 12), jewel, 0, .981, 0)
   for (const side of [-1, 1]) add(podium, new T.BoxGeometry(.053, .76, .023), metal, side * .30, .50, .502)
 
+  const throne = award.place === 1 ? buildThrone(metal, cloth, jewel) : null
+  if (throne) root.add(throne)
+
   root.position.y = FLOOR
   root.visible = false
-  return { root, crew, king, arms, boots, hand, crown, podium }
+  return { root, crew, king, arms, boots, hand, crown, podium, throne }
 }
 
 export default function Coronation3D({ award }: { award: Coronation }) {
   const rig = useMemo(() => makeRoyals(award), [award])
   const movingRig = useRef(rig)
   const crownFit = useRef({
-    head: new T.Vector3(), grip: new T.Vector3(), sample: new T.Vector3(),
-    height: 1.73, fitted: false, headBone: undefined as T.Object3D | undefined,
+    head: new T.Vector3(), grip: new T.Vector3(), sample: new T.Vector3(), bonePosition: new T.Vector3(),
+    height: 1.73, restHeadY: 0, fitted: false, headBone: undefined as T.Object3D | undefined,
   })
   useLayoutEffect(() => {
     movingRig.current = rig
@@ -143,8 +179,8 @@ export default function Coronation3D({ award }: { award: Coronation }) {
   useFrame(({ scene }) => {
     const rig = movingRig.current
     const anchor = crownFit.current
-    const t = Date.now() - award.startedAt
-    const frame = coronationFrame(t)
+    const t = matchTime() - award.startedAt
+    const frame = coronationFrame(t, award.place)
     rig.root.visible = true
     rig.crew.forEach(({ root, arms, legs }, index) => {
       const [x, z] = CORNERS[index]
@@ -168,24 +204,33 @@ export default function Coronation3D({ award }: { award: Coronation }) {
     rig.arms[1].rotation.x = .15 * Math.sin(t * .013) * (1 - frame.approach)
     rig.podium.visible = frame.lift > .01
     rig.podium.scale.y = Math.max(.01, frame.lift)
+    if (rig.throne) {
+      rig.throne.visible = frame.throne > .01
+      rig.throne.position.y = frame.lift
+      rig.throne.scale.y = Math.max(.01, frame.throne)
+    }
 
     const winner = scene.getObjectByName(award.tokenId)
     if (winner && t >= 4190) {
-      const headBone = winner.getObjectByName('Head')
+      const headBone = winner.getObjectByName('Head') ?? winner.getObjectByName('mixamorigHead') ?? winner.getObjectByName('mixamorig_Head')
       if (!anchor.fitted || headBone !== anchor.headBone) {
         // Fit at the centre of the head, below hairstyles that are taller at the sides.
         const top = scalpHeight(winner, anchor.sample)
-        if (Number.isFinite(top) && top > 1.30) {
-          anchor.height = T.MathUtils.clamp(top - .066, 1.28, 2.22)
+        if (Number.isFinite(top) && top > 1.10) {
+          anchor.height = T.MathUtils.clamp(top - .066, 1.10, 2.22)
+          // A late avatar load can happen mid-pose. Sample its skeleton at the same time as the crown fit.
+          anchor.restHeadY = headBone ? headBone.getWorldPosition(anchor.bonePosition).y - winner.position.y : 0
           anchor.fitted = true
           anchor.headBone = headBone
         }
       }
     }
-    rig.crown.visible = rig.king.visible && t < 8290
+    rig.crown.visible = rig.king.visible && t < coronationDuration(award.place) - 310
     rig.hand.getWorldPosition(anchor.grip)
     anchor.grip.y -= FLOOR - .045
-    anchor.head.set(winner?.position.x ?? 0, anchor.height + (winner ? winner.position.y - FLOOR : frame.lift), winner?.position.z ?? 0)
+    const shiftY = winner && anchor.headBone
+      ? anchor.headBone.getWorldPosition(anchor.bonePosition).y - winner.position.y - anchor.restHeadY : 0
+    anchor.head.set(winner?.position.x ?? 0, anchor.height + shiftY + (winner ? winner.position.y - FLOOR : frame.lift), winner?.position.z ?? 0)
     rig.crown.position.copy(anchor.grip).lerp(anchor.head, frame.crown)
     rig.crown.rotation.z = .25 * (1 - frame.crown)
   }, -.5)

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { router } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Animated, Easing, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import appConfig from '../../app.json'
 import Backdrop from '../ui/Backdrop'
-import BrandLockup from '../ui/BrandLockup'
-import { LABEL, NUMERIC, OutlineText } from '../ui/arcade'
+import ArcadeArt from '../ui/ArcadeArt'
+import { ArtAccent, HomeArtMotion, HomeBrand, LoadingShine } from '../ui/HomeArt'
+import { LABEL, NUMERIC } from '../ui/arcade'
 import { A } from '../theme'
 import { useAccount } from '../net/account'
 
@@ -15,7 +17,6 @@ const LOAD_MS = 2400
 export default function SplashScreen() {
   const { height, width } = useWindowDimensions()
   const [progress, setProgress] = useState(0)
-  const [shine] = useState(() => new Animated.Value(0))
   const ready = useAccount(s => s.ready)
   const avatar = useAccount(s => s.session?.account.avatar)
 
@@ -34,50 +35,41 @@ export default function SplashScreen() {
     if (ready && progress === 100) router.replace(avatar == null ? '/onboarding' : '/home')
   }, [avatar, progress, ready])
 
-  // Travelling highlight along the loading bar.
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(shine, { toValue: 1, duration: 1100, easing: Easing.linear, useNativeDriver: true }),
-    )
-    loop.start()
-    return () => loop.stop()
-  }, [shine])
-
   const barWidth = Math.min(width - 72, 280)
-  const shineX = shine.interpolate({ inputRange: [0, 1], outputRange: [-60, barWidth + 60] })
-  const scale = Math.min(1.25, Math.max(0.78, height / 780))
+  const boardSize = Math.min(width - 50, height * .47, 310)
 
   return (
-    <View style={styles.root}>
+    <HomeArtMotion style={styles.root}>
       <Backdrop />
 
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.center}>
-          <BrandLockup scale={scale} animated />
+          <HomeBrand size={boardSize} />
         </View>
 
         <View style={styles.footer}>
-          <View style={[styles.track, { width: barWidth }]}>
+          <View accessibilityRole="progressbar" accessibilityLabel="Loading game"
+            aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} style={[styles.track, { width: barWidth }]}>
             <LinearGradient
               colors={[A.goldLite, A.gold, A.goldMid]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={[styles.fill, { width: `${progress}%` }]}
-            />
-            <Animated.View style={[styles.shine, { transform: [{ translateX: shineX }, { skewX: '-20deg' }] }]} />
+            >
+              <LoadingShine width={barWidth} />
+            </LinearGradient>
           </View>
 
           <View style={styles.loadingRow}>
-            <OutlineText size={12} width={1.8} color={A.text} outline={A.textOutline} font={LABEL}>
-              LOADING
-            </OutlineText>
+            <ArtAccent group={2}><ArcadeArt name="lucky7" size={28} /></ArtAccent>
+            <Text style={styles.loadingLabel}>{progress === 100 && !ready ? 'Restoring session…' : 'Loading game'}</Text>
             <Text style={styles.pct}>{progress}%</Text>
           </View>
 
-          <Text style={styles.build}>v1.0.4</Text>
+          <Text style={styles.build}>v{appConfig.expo.version}</Text>
         </View>
       </SafeAreaView>
-    </View>
+    </HomeArtMotion>
   )
 }
 
@@ -86,7 +78,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  footer: { alignItems: 'center', paddingBottom: 26, gap: 8 },
+  footer: { alignItems: 'center', paddingBottom: 30, gap: 10 },
   track: {
     height: 14,
     borderRadius: 999,
@@ -96,14 +88,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
   },
-  fill: { height: '100%', borderRadius: 999 },
-  shine: {
-    position: 'absolute',
-    width: 34,
-    height: '200%',
-    backgroundColor: 'rgba(255,255,255,0.33)',
-  },
+  fill: { height: '100%', borderRadius: 999, overflow: 'hidden' },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  loadingLabel: { fontFamily: LABEL, fontSize: 15, color: A.text, includeFontPadding: false },
   pct: { fontFamily: NUMERIC, fontSize: 13, color: A.gold, includeFontPadding: false },
   build: { fontFamily: LABEL, fontSize: 10, color: 'rgba(207,224,255,0.55)', includeFontPadding: false },
 })

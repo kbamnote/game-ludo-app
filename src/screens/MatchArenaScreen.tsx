@@ -2,24 +2,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import * as Speech from 'expo-speech'
 import { Asset } from 'expo-asset'
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { Image, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
 import MatchScene from '../three/MatchScene'
 import SceneBoundary from '../three/SceneBoundary'
 import MatchVoice from '../voice/MatchVoice'
 import Icon from '../ui/Icon'
+import ArcadeArt from '../ui/ArcadeArt'
+import { usePauseMenuAudio } from '../game/AppAudio'
 import Glow from '../ui/Glow'
 import MatchDice from '../ui/MatchDice'
+import MatchPauseMenu from '../ui/MatchPauseMenu'
 import { C, F, R, TA } from '../theme'
 import { useMatch, type LocalVariant, type PlayerConfig } from '../game/store'
-import { useMatchAudio } from '../game/useMatchAudio'
+import { RescueAudio, useMatchAudio } from '../game/useMatchAudio'
 import { onMatchReaction, onMatchSound, sendMatchReaction, sendMatchSound, useOnline } from '../net/online'
 import { BOMB_SCORCH_END, REACTIONS, REACTION_DURATION, REACTION_LAUNCH_DELAY, reactionAnchor, type Reaction, type ReactionKind, type ReactionRequest } from '../game/reactions'
 import ReactionPicker from '../ui/ReactionPicker'
 import MatchSoundboard, { MatchSoundPlayback } from '../ui/MatchSoundboard'
-import { AMBULANCE_SOUND, DANCE_SONG, soundAsset } from '../game/soundboard'
-import { RESCUE_ARRIVAL_MS, RESCUE_HOME_MS, RESCUE_MS, STEP_MS } from '../game/moveTiming'
+import { DANCE_SONG, soundAsset } from '../game/soundboard'
 import { useProfile } from '../game/profile'
 import { SEAT_HEX, seatScore, tokensHome, type Seat } from '../game/rules'
 
@@ -133,7 +136,7 @@ export default function MatchArenaScreen() {
   const phase = useMatch((s) => s.phase)
   const current = useMatch((s) => s.current)
   const die = useMatch((s) => s.die)
-  const lastServerRoll = useMatch(s => s.mode === 'online' ? s.lastServerRoll : null)
+  const lastRoll = useMatch(s => s.lastRoll)
   const passedRoll = useMatch(s => s.passedRoll)
   const moves = useMatch((s) => s.moves)
   const ranking = useMatch((s) => s.ranking)
@@ -143,13 +146,23 @@ export default function MatchArenaScreen() {
   const pickToken = useMatch((s) => s.pickToken)
   const roll = useMatch((s) => s.roll)
   const mode = useMatch((s) => s.mode)
+  const localPaused = useMatch(s => s.pausedAt !== null)
+  const variant = useMatch((s) => s.variant)
   const mySeat = useMatch((s) => s.mySeat)
   const leaveRoom = useOnline((s) => s.leaveRoom)
+  const prize = useOnline(s => s.room?.prize ?? 0)
   const friendsRoom = useOnline(s => s.room && !s.room.publicTable && s.room.phase === 'playing' ? s.room.code : null)
 
   const [voiceOpen, setVoiceOpen] = useState(false)
+  const [voiceSpeakerMuted, setVoiceSpeakerMuted] = useState(false)
   useFocusEffect(useCallback(() => () => setVoiceOpen(false), []))
-  const [soundMuted, setSoundMuted] = useState(false)
+  const [pauseMenuOpen, setPauseMenuOpen] = useState(false)
+  const resumeMatch = useCallback(() => {
+    useMatch.getState().setPaused(false)
+    setPauseMenuOpen(false)
+  }, [])
+  useFocusEffect(useCallback(() => resumeMatch, [resumeMatch]))
+  const soundMuted = useProfile(state => state.soundMuted)
   const [voiceEnabled, setVoiceEnabled] = useState(true)
   const [addedSoundPlaying, setAddedSoundPlaying] = useState(false)
   const addedSoundRef = useRef(false)
@@ -159,27 +172,28 @@ export default function MatchArenaScreen() {
     if (playing) void Speech.stop().catch(() => {})
   }, [])
   useEffect(() => {
-    void Asset.loadAsync([soundAsset(AMBULANCE_SOUND), soundAsset(DANCE_SONG)]).catch(() => {})
+    void Asset.loadAsync(soundAsset(DANCE_SONG)).catch(() => {})
   }, [])
   const sharedTable = mode === 'local' && params.variant !== undefined
   const currentPlayer = players.find(player => player.seat === current)
   const turnName = currentPlayer?.name
   const matchEnded = phase === 'ended'
   const canChat = mode === 'online' && Boolean(friendsRoom) && !matchEnded
+  usePauseMenuAudio(localPaused || addedSoundPlaying || Boolean(coronation) || capturing)
   useEffect(() => {
-    if (!sharedTable || !voiceEnabled || !turnName || matchEnded || coronation || addedSoundRef.current) return
+    if (!sharedTable || !voiceEnabled || soundMuted || localPaused || !turnName || matchEnded || coronation || addedSoundRef.current) return
     Speech.speak(`${turnName}, your turn.`, { rate: .94 })
     return () => { void Speech.stop().catch(() => {}) }
-  }, [sharedTable, voiceEnabled, turnName, current, matchEnded, coronation])
+  }, [sharedTable, voiceEnabled, soundMuted, localPaused, turnName, current, matchEnded, coronation])
   const [secondsLeft, setSecondsLeft] = useState(TURN_SECONDS)
   const [recipient, setRecipient] = useState<Seat | null>(null)
   const [soundsOpen, setSoundsOpen] = useState(false)
   const [effectNotice, setEffectNotice] = useState('')
-  const [sound, setSound] = useState<{ clip: number; receivedAt: number; matchId: number; endsAt?: number } | null>(null)
+  const [sound, setSound] = useState<{ clip: number; receivedAt: number; matchId: number } | null>(null)
   const danceStartedAt = useRef(0)
   const startDance = useCallback(() => { danceStartedAt.current = Date.now() }, [])
   const [reaction, setReaction] = useState<Reaction | null>(null)
-  useMatchAudio(soundMuted || addedSoundPlaying, reaction, coronation)
+  useMatchAudio(soundMuted || localPaused || addedSoundPlaying, reaction, coronation)
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const senderSeat = mode === 'online' ? mySeat : sharedTable ? current : players.find(player => player.kind === 'human')?.seat
   const target = players.find(player => player.seat === recipient)
@@ -218,6 +232,7 @@ export default function MatchArenaScreen() {
     if (phase === 'ended' || sharedTable || coronation) return
 
     const id = setInterval(() => {
+      if (useMatch.getState().pausedAt !== null) return
       secondsRef.current -= 1
       if (secondsRef.current <= 0) {
         secondsRef.current = TURN_SECONDS
@@ -249,29 +264,12 @@ export default function MatchArenaScreen() {
     const off = onMatchReaction(showReaction)
     return () => { off(); clearTimeout(reactionTimer.current ?? undefined); setReaction(null); setRecipient(null) }
   }, [showReaction, setReaction, setRecipient]))
-  const playSound = useCallback((clip: number, endsAt?: number) => {
+  const playSound = useCallback((clip: number) => {
     const match = useMatch.getState()
     if (match.phase === 'ended' || match.coronation) return
     if (clip !== DANCE_SONG) danceStartedAt.current = 0
-    setSound({ clip, receivedAt: Date.now(), matchId: match.startedAt, endsAt })
+    setSound({ clip, receivedAt: Date.now(), matchId: match.startedAt })
   }, [])
-  useFocusEffect(useCallback(() => {
-    if (!rescue) return
-    const walkEnd = rescue.startedAt + rescue.path.length * STEP_MS
-    const timers = rescue.captures.map((_, index) => {
-      const rescueStart = walkEnd + index * RESCUE_MS
-      const endsAt = rescueStart + RESCUE_HOME_MS
-      return setTimeout(() => {
-        if (Date.now() < endsAt && useMatch.getState().animation === rescue && !addedSoundRef.current) {
-          playSound(AMBULANCE_SOUND, endsAt)
-        }
-      }, Math.max(0, rescueStart + RESCUE_ARRIVAL_MS - Date.now()))
-    })
-    return () => {
-      timers.forEach(clearTimeout)
-      setSound(sound => sound?.clip === AMBULANCE_SOUND ? null : sound)
-    }
-  }, [rescue, playSound]))
   useFocusEffect(useCallback(() => {
     const off = onMatchSound(playSound)
     const offCoronation = useMatch.subscribe((state, previous) => {
@@ -355,9 +353,10 @@ export default function MatchArenaScreen() {
             <View style={styles.topGroup}>
               <Pressable
                 style={styles.squareButton}
+                accessibilityRole="button" accessibilityLabel="Pause match"
                 onPress={() => {
-                  if (mode === 'online') leaveRoom()
-                  router.replace('/home')
+                  useMatch.getState().setPaused(true)
+                  setPauseMenuOpen(true)
                 }}
               >
                 <Icon name="pause" size={20} color={C.arenaOnSurface} />
@@ -367,21 +366,21 @@ export default function MatchArenaScreen() {
                 onPress={() => setVoiceEnabled(value => !value)}>
                 <Icon name={voiceEnabled ? 'record-voice-over' : 'voice-over-off'} size={20} color={C.arenaTertiary} />
               </Pressable> : canChat && <Pressable style={styles.squareButton} accessibilityRole="button"
-                accessibilityLabel={voiceOpen ? 'Close voice chat' : 'Open voice chat'}
+                accessibilityLabel={voiceOpen ? 'Turn off match microphone' : 'Turn on match microphone'}
                 accessibilityState={{ expanded: voiceOpen }} onPress={() => setVoiceOpen(open => !open)}>
-                <Icon name="mic" size={20} color={voiceOpen ? C.arenaTertiary : C.arenaOnSurfaceVariant} />
+                {voiceOpen ? <ArcadeArt name="voice" size={25} /> : <Icon name="mic-off" size={20} color={C.arenaOnSurfaceVariant} />}
               </Pressable>}
             </View>
 
-            <View style={[styles.pot, compactHeader && styles.compactPot]}>
+            {mode === 'online' && prize > 0 && <View style={[styles.pot, compactHeader && styles.compactPot]}>
               {!compactHeader && <View style={styles.potIcon}>
                 <Icon name="monetization-on" size={16} color={C.arenaOnSecondary} />
               </View>}
               <View>
                 <Text style={styles.potLabel}>POT PRIZE</Text>
-                <Text style={styles.potValue}>2,000</Text>
+                <Text style={styles.potValue}>{prize.toLocaleString()}</Text>
               </View>
-            </View>
+            </View>}
 
             <View style={styles.topGroup}>
               {phase !== 'ended' && !coronation && <Pressable style={styles.squareButton} accessibilityRole="button"
@@ -394,15 +393,15 @@ export default function MatchArenaScreen() {
                 onPress={() => requestSound(DANCE_SONG)}>
                 <Icon name="dance-ballroom" size={24} color={C.arenaSecondaryFixed} />
               </Pressable>}
-              <Pressable style={styles.squareButton} accessibilityRole="button"
-                accessibilityLabel={soundMuted ? 'Enable match sound' : 'Mute match sound'}
-                onPress={() => setSoundMuted(value => !value)}>
-                <Icon name={soundMuted ? 'volume-off' : 'volume-up'} size={20} color={C.arenaOnSurfaceVariant} />
-              </Pressable>
+              {canChat && voiceOpen && <Pressable style={styles.squareButton} accessibilityRole="button"
+                accessibilityLabel={voiceSpeakerMuted ? 'Unmute voice chat speaker' : 'Mute voice chat speaker'}
+                onPress={() => setVoiceSpeakerMuted(muted => !muted)}>
+                <Icon name={voiceSpeakerMuted ? 'volume-off' : 'volume-up'} size={20} color={C.arenaOnSurfaceVariant} />
+              </Pressable>}
             </View>
           </View>
 
-          {canChat && voiceOpen && <MatchVoice key={friendsRoom} />}
+          {canChat && voiceOpen && <MatchVoice key={friendsRoom} speakerMuted={voiceSpeakerMuted} />}
           <View style={styles.stage}>
             <Image source={ARENA_BACKDROP} accessible={false} pointerEvents="none"
               resizeMode="cover" fadeDuration={0} style={styles.stageBackdrop} />
@@ -420,9 +419,9 @@ export default function MatchArenaScreen() {
 
             {phase === 'ended' && !coronation && (
               <View style={styles.endOverlay}>
-                <Icon name="emoji-events" size={48} color={C.arenaSecondaryContainer} />
+                <ArcadeArt name="tournament" size={54} />
                 <Text style={styles.endTitle}>
-                  {params.variant === 'teams' && ranking.length
+                  {variant === 'teams' && ranking.length
                     ? `TEAM ${ranking[0] % 2 + 1} WINS`
                     : `${(players.find(p => p.seat === ranking[0])?.name ?? '').toUpperCase()} WINS`}
                 </Text>
@@ -433,7 +432,7 @@ export default function MatchArenaScreen() {
                         <View style={[styles.seatDot, { backgroundColor: SEAT_HEX[seat] }]} />
                         <Text style={styles.rankName}>{players.find((p) => p.seat === seat)?.name}</Text>
                       </View>
-                      <Text style={styles.rankName}>{params.variant === 'teams' ? 'WINNER' : `#${i + 1}`}</Text>
+                      <Text style={styles.rankName}>{variant === 'teams' ? 'WINNER' : `#${i + 1}`}</Text>
                     </View>
                   ))}
                 </View>
@@ -472,8 +471,8 @@ export default function MatchArenaScreen() {
 
             <View style={styles.turnDock}>
               <View style={styles.dockSide}>{playerChips.filter((_, index) => index % 2 === 0)}</View>
-              <MatchDice seat={current} value={lastServerRoll?.die ?? die ?? 6} rolling={phase === 'rolling'}
-                rollUntil={lastServerRoll?.endsAt} canRoll={showRoll} onRoll={roll} />
+              <MatchDice seat={current} value={lastRoll?.die ?? die ?? 6} animation={lastRoll} paused={localPaused}
+                canRoll={showRoll} onRoll={roll} />
               <View style={styles.dockSide}>{playerChips.filter((_, index) => index % 2 === 1)}</View>
             </View>
           </View>
@@ -481,9 +480,15 @@ export default function MatchArenaScreen() {
           close={() => setRecipient(null)} send={sendReaction} />}
         {soundsOpen && phase !== 'ended' && !coronation && <MatchSoundboard close={() => setSoundsOpen(false)}
           play={requestSound} />}
+        <RescueAudio rescue={rescue} muted={soundMuted || localPaused} />
         {sound && sound.matchId === startedAt && phase !== 'ended' && !coronation && <MatchSoundPlayback
-          key={sound.receivedAt} clip={sound.clip} endsAt={sound.endsAt} muted={soundMuted}
+          key={sound.receivedAt} clip={sound.clip} muted={soundMuted || localPaused}
           onDance={startDance} onPlayingChange={onSoundPlayingChange} />}
+        {pauseMenuOpen && <MatchPauseMenu online={mode === 'online'} resume={resumeMatch} leave={() => {
+          if (mode === 'online') leaveRoom()
+          else useMatch.getState().reset()
+          router.replace('/home')
+        }} />}
       </SafeAreaView>
     </View>
   )

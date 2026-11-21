@@ -20,6 +20,7 @@ import { LuckiestGuy_400Regular } from '@expo-google-fonts/luckiest-guy'
 import { Baloo2_700Bold, Baloo2_800ExtraBold } from '@expo-google-fonts/baloo-2'
 import { C } from '../theme'
 import { restoreAccount, useAccount } from '../net/account'
+import AppAudio from '../game/AppAudio'
 
 SplashScreenModule.preventAutoHideAsync().catch(() => {})
 
@@ -65,6 +66,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AppAudio>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
@@ -95,6 +97,7 @@ export default function RootLayout() {
           <Stack.Screen name="voice" />
         </Stack.Protected>
       </Stack>
+      </AppAudio>
     </SafeAreaProvider>
   )
 }

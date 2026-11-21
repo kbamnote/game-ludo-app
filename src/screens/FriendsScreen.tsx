@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
-import { router } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
+import { router, useFocusEffect } from 'expo-router'
 import * as Clipboard from 'expo-clipboard'
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   Share,
   StyleSheet,
@@ -11,8 +10,11 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import Pressable from '../ui/SoundPressable'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Backdrop from '../ui/Backdrop'
+import ArcadeArt from '../ui/ArcadeArt'
+import CoinEntryPicker from '../ui/CoinEntryPicker'
 import Icon from '../ui/Icon'
 import { GoldBar, GoldPanel, NUMERIC, LABEL, OutlineText } from '../ui/arcade'
 import { Pawn } from '../ui/ArcadeIcons'
@@ -21,22 +23,29 @@ import { SEAT_HEX, type Seat } from '../game/rules'
 import { useIdentity } from '../game/identity'
 import { useOnline } from '../net/online'
 import { IS_LOCAL_SERVER, SERVER_URL } from '../net/config'
+import { refreshOnlineCoins, useAccount } from '../net/account'
+import { GAME_VARIANTS } from '../game/variants'
+import type { CoinEntry } from '../game/matchEntry'
 
 const SEAT_COLOR: Record<Seat, string> = SEAT_HEX
 
 export default function FriendsScreen() {
   const identity = useIdentity()
-  const { status, error, busy, room, connect, createRoom, joinRoom, setReady, startMatch, leaveRoom, clearError } =
+  const googleAccount = useAccount(state => state.session?.account.provider === 'google')
+  const balance = useAccount(state => state.session?.account.coins ?? 0)
+  const { status, error, busy, room, connect, createRoom, joinRoom, setReady, setVariant, startMatch, leaveRoom, clearError } =
     useOnline()
 
   const [code, setCode] = useState('')
+  const [entry, setEntry] = useState<CoinEntry | null>(null)
   const [nameDraft, setNameDraft] = useState(identity.name)
-  const [editingName, setEditingName] = useState(!identity.named)
+  const [editingName, setEditingName] = useState(!identity.named && !googleAccount)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     void connect()
   }, [connect])
+  useFocusEffect(useCallback(() => { void refreshOnlineCoins() }, []))
 
   // Once the host starts, every member is pushed into the match.
   useEffect(() => {
@@ -46,7 +55,14 @@ export default function FriendsScreen() {
   const me = room?.members.find((m) => m.playerId === identity.playerId)
   const isHost = room?.hostId === identity.playerId
   const seated = room?.members.filter((m) => m.seat !== null) ?? []
-  const everyoneReady = seated.length >= 2 && seated.every((m) => m.ready)
+  const variant = GAME_VARIANTS.find(choice => choice.id === room?.variant) ?? GAME_VARIANTS[0]
+  const minimumPlayers = variant.id === 'teams' ? 4 : 2
+  const everyoneReady = seated.length >= minimumPlayers && seated.every((m) => m.ready)
+  const roomEntry = room?.entry ?? 0
+  const canAffordRoom = balance >= roomEntry
+  const lobbyPot = room?.phase === 'lobby' && seated.length < minimumPlayers
+    ? minimumPlayers === 4 ? (roomEntry * 4).toLocaleString() : `${(roomEntry * 2).toLocaleString()}–${(roomEntry * 4).toLocaleString()}`
+    : (room?.prize ?? 0).toLocaleString()
 
   const onCopy = async () => {
     if (!room) return
@@ -69,6 +85,8 @@ export default function FriendsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
             style={styles.backButton}
             onPress={() => {
               if (room) leaveRoom()
@@ -80,7 +98,7 @@ export default function FriendsScreen() {
           <OutlineText size={21} width={2.6} color={A.gold} outline={A.textOutline}>
             {room?.publicTable ? 'PUBLIC TABLE' : 'PLAY WITH FRIENDS'}
           </OutlineText>
-          <View style={{ width: 40 }} />
+          <ArcadeArt name={room?.publicTable ? 'online' : 'friends'} size={40} />
         </View>
 
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -144,7 +162,7 @@ export default function FriendsScreen() {
               {/* Create */}
               <GoldPanel radius={16} contentStyle={styles.card}>
                 <View style={styles.cardHead}>
-                  <Icon name="add-circle" size={22} color={A.goldLite} />
+                  <ArcadeArt name="board" size={34} />
                   <OutlineText size={17} width={2.2}>
                     CREATE A ROOM
                   </OutlineText>
@@ -152,11 +170,12 @@ export default function FriendsScreen() {
                 <Text style={styles.cardBody}>
                   Make a private table and share the 6-digit code. Up to 4 players.
                 </Text>
+                <CoinEntryPicker selected={entry} balance={balance} onSelect={setEntry} busy={busy} />
                 <GoldBar
                   label={busy ? 'CREATING...' : 'CREATE ROOM'}
                   size={16}
                   paddingVertical={7}
-                  onPress={busy ? undefined : () => void createRoom()}
+                  onPress={busy || entry === null || entry > balance ? undefined : () => void createRoom(false, entry)}
                 />
               </GoldPanel>
 
@@ -211,6 +230,38 @@ export default function FriendsScreen() {
                 </View>
               </GoldPanel>
 
+              {roomEntry > 0 && <GoldPanel radius={16} contentStyle={styles.card}>
+                <View style={styles.cardHead}>
+                  <ArcadeArt name="tournament" size={38} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.roomLabel}>{lobbyPot} COIN POT</Text>
+                    <Text style={styles.cardBody}>{roomEntry.toLocaleString()} coins per player</Text>
+                  </View>
+                </View>
+                <Text style={styles.cardBody}>
+                  {variant.id === 'teams' ? 'The winning team splits the pot. ' : 'First place wins the pot. '}
+                  Entry is charged when the match starts.
+                </Text>
+                {!canAffordRoom && <Text style={styles.hint}>You need more online coins to play at this table.</Text>}
+              </GoldPanel>}
+
+              {!room.publicTable && (
+                <GoldPanel radius={16} contentStyle={styles.card}>
+                  <Text accessibilityRole="header" style={styles.roomLabel}>GAME MODE</Text>
+                  {isHost && room.phase === 'lobby' ? <View style={styles.modeRow}>
+                    {GAME_VARIANTS.map(choice => (
+                      <Pressable key={choice.id} accessibilityRole="radio" disabled={busy}
+                        aria-checked={choice.id === variant.id}
+                        style={[styles.modeOption, choice.id === variant.id && styles.modeSelected]}
+                        onPress={() => { if (choice.id !== variant.id) void setVariant(choice.id) }}>
+                        <Text style={styles.actionText}>{choice.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View> : <Text style={styles.actionText}>{variant.name}</Text>}
+                  <Text style={styles.cardBody}>{variant.detail}</Text>
+                </GoldPanel>
+              )}
+
               {/* Seats */}
               <GoldPanel radius={16} contentStyle={styles.card}>
                 <View style={styles.cardHead}>
@@ -230,6 +281,7 @@ export default function FriendsScreen() {
                       <Text style={[styles.seatName, !member && styles.seatEmpty]} numberOfLines={1}>
                         {member ? member.name : 'Waiting...'}
                         {member?.playerId === identity.playerId ? '  (you)' : ''}
+                        {variant.id === 'teams' ? ` · Team ${seat % 2 + 1}` : ''}
                       </Text>
                       {member?.playerId === room.hostId && (
                         <View style={styles.hostTag}>
@@ -256,7 +308,7 @@ export default function FriendsScreen() {
                 label={me?.ready ? 'READY ✓' : 'TAP WHEN READY'}
                 size={16}
                 paddingVertical={8}
-                onPress={() => setReady(!me?.ready)}
+                onPress={canAffordRoom || me?.ready ? () => setReady(!me?.ready) : undefined}
                 style={me?.ready ? { opacity: 0.85 } : undefined}
               />
 
@@ -266,8 +318,8 @@ export default function FriendsScreen() {
                   face={everyoneReady ? ['#3ddc6b', '#18a14a'] : ['#5a6b8c', '#3d4b66']}
                   rim={everyoneReady ? [A.goldLite, A.gold, A.goldMid] : ['#8d9bb3', '#6b7890', '#55617a']}
                   contentStyle={styles.startPanel}
-                  onPress={everyoneReady && !busy ? () => void startMatch() : undefined}
-                  disabled={!everyoneReady || busy}
+                  onPress={everyoneReady && canAffordRoom && !busy ? () => void startMatch() : undefined}
+                  disabled={!everyoneReady || !canAffordRoom || busy}
                 >
                   <OutlineText size={19} width={2.6}>
                     {busy ? 'STARTING...' : 'START MATCH'}
@@ -275,13 +327,15 @@ export default function FriendsScreen() {
                 </GoldPanel>
               ) : (
                 <Text style={styles.waitingHost}>
-                  {everyoneReady ? 'Waiting for the host to start...' : 'Waiting for everyone to be ready...'}
+                  {seated.length < minimumPlayers ? `Waiting for ${minimumPlayers} players…` : everyoneReady ? 'Waiting for the host to start...' : 'Waiting for everyone to be ready...'}
                 </Text>
               )}
 
               {!everyoneReady && isHost && (
                 <Text style={styles.hint}>
-                  {seated.length < 2 ? 'Need at least 2 players' : 'Everyone must tap ready'}
+                  {seated.length < minimumPlayers
+                    ? variant.id === 'teams' ? 'Team Up needs 4 players' : 'Need at least 2 players'
+                    : 'Everyone must tap ready'}
                 </Text>
               )}
 
@@ -444,6 +498,9 @@ const styles = StyleSheet.create({
   },
   inviteButton: { backgroundColor: 'rgba(19,110,60,0.8)', borderColor: A.green },
   actionText: { fontFamily: NUMERIC, fontSize: 12.5, color: A.text },
+  modeRow: { flexDirection: 'row', gap: 6 },
+  modeOption: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: A.barEdge, backgroundColor: A.bgDeep },
+  modeSelected: { borderColor: A.gold, backgroundColor: A.bgMid },
 
   seatRow: {
     flexDirection: 'row',

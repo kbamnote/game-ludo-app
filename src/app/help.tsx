@@ -8,7 +8,7 @@ const rules = [
   ['Play across phones', 'Open Friends to create a room. Share its six-digit code, then have everyone tap Ready. The host starts the match.'],
 ]
 export default function Help() {
-  return <ArcadePage title="How to play"><TableArt title="Ludo rules" subtitle="Four pawns. One race home." />
+  return <ArcadePage title="How to play" art="help"><TableArt art="board" title="Ludo rules" subtitle="Four pawns. One race home." />
     {rules.map(([title, body]) => <View key={title} style={s.card}><Text style={s.heading}>{title}</Text><Text style={s.copy}>{body}</Text></View>)}
   </ArcadePage>
 }
